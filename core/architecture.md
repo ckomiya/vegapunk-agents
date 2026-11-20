@@ -35,6 +35,19 @@ The pattern combines three ideas: a blackboard-style shared memory (`punk-record
 3. Records are **append-only**. A record is never edited or deleted. A correction is a new record whose `refs` points to the record it corrects.
 4. Every record MUST name its author, type, phase and iteration, and MUST validate against [`schemas/punk-records.schema.json`](schemas/punk-records.schema.json).
 
+### Selective reading
+
+- A satellite MUST NOT receive records whose type is not in its "Reads" column.
+- Flavors MAY pass a satellite only a subset of the records it may read, to save context. If they do, the subset MUST include at least:
+  1. the `goal` record;
+  2. every `finding` the satellite may read;
+  3. every record the satellite may read from the current iteration and the previous one;
+  4. every record referenced in the `refs` of any record passed (one level) that the satellite may read;
+  5. for `punk-01-shaka`: every `critique` with `blocking: true` in the mission, so the verdict can check that all of them are resolved or overruled.
+- Passed records MUST be complete and unaltered, in their original order. Selecting is allowed; summarizing or rewriting records is not.
+- Records not passed remain in `punk-records` unchanged (append-only).
+- If a satellite needs context it did not receive, it writes a `note` asking for it; the flavor SHOULD pass the requested records in the satellite's next activation.
+
 ### Record types and write permissions
 
 | Record type | Meaning | Author (only) |
