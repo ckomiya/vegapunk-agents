@@ -4,6 +4,12 @@
 # Per-satellite Claude Code subagent settings (stella is the human; no entry).
 # These are DEFAULT values meant for testing. Change them to suit your needs,
 # then regenerate with: python flavors/01-claude-code/tools/generate_agents.py
+#
+# The engine is the main-session /vegapunk skill. It does mechanical work
+# (relay script output, call satellites), so a low effort is enough.
+# Valid values: low, medium, high, xhigh, max. Raise it only if a test justifies it.
+engine:
+  effort: low
 satellites:
   punk-01-shaka:
     model: sonnet

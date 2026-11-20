@@ -32,6 +32,10 @@ def draft(author, rtype, content="Content.", refs=None, **extra):
     return d
 
 
+def without_context(nxt):
+    return {k: v for k, v in nxt.items() if k != "context"}
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -104,7 +108,7 @@ class Base(unittest.TestCase):
 class LifecycleTests(Base):
     def test_1_light_without_hitl(self):
         out = self.init("light")
-        self.assertEqual(out["next"], {"phase": "IDEATION", "actor": "punk-03-edison", "action": "invoke_satellite"})
+        self.assertEqual(without_context(out["next"]), {"phase": "IDEATION", "actor": "punk-03-edison", "action": "invoke_satellite"})
         out = self.append(draft("punk-03-edison", "proposal", refs=["r-001"]))
         self.assertEqual(out["next"]["phase"], "VERDICT")
         out = self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED", refs=["r-002"]))
@@ -158,7 +162,7 @@ class LifecycleTests(Base):
             self.assertEqual(self.doc()["state"]["iteration"], expected_iteration)
             self.append(draft("punk-03-edison", "revision"))
         out = self.append(draft("punk-02-lilith", "critique", blocking=True))
-        self.assertEqual(out["next"], {"phase": "VERDICT", "actor": "punk-01-shaka", "action": "invoke_satellite"})
+        self.assertEqual(without_context(out["next"]), {"phase": "VERDICT", "actor": "punk-01-shaka", "action": "invoke_satellite"})
         self.assertEqual(self.doc()["state"]["iteration"], 2)
         errors = self.append_error(json.dumps([draft("punk-01-shaka", "verdict", verdict="NEEDS_REVISION")]))
         self.assertTrue(any("NEEDS_REVISION" in e for e in errors))
@@ -203,7 +207,7 @@ class LifecycleTests(Base):
         self.assertEqual(out["next"], {"phase": "HITL_APPROVAL", "actor": "stella", "action": "await_hitl"})
         self.assertTrue(self.append_error(json.dumps([draft("punk-05-atlas", "artifact")])))  # no drafts at HITL
         out = self.run_cli("approve")[1]
-        self.assertEqual(out["next"], {"phase": "EXECUTION", "actor": "punk-05-atlas", "action": "invoke_satellite"})
+        self.assertEqual(without_context(out["next"]), {"phase": "EXECUTION", "actor": "punk-05-atlas", "action": "invoke_satellite"})
         out = self.append(draft("punk-05-atlas", "artifact"))
         self.assertEqual(out["next"]["phase"], "OPERATIONS")
         out = self.append(draft("punk-06-york", "ops_log", "Done."))
@@ -592,6 +596,112 @@ class ShowTests(Base):
         self.assertEqual(code, 0, out)
         self.assertEqual(out["records"][0]["id"], "r-002")
         self.run_cli("show", "r-099")
+        self.assertEqual(self.snapshot(), before)
+
+
+class NextContextTests(Base):
+    def test_next_context_only_with_invoke_satellite_and_equals_context(self):
+        out = self.init("light", "--hitl-after-verdict")
+        code, ctx = self.run_cli("context")
+        self.assertEqual(out["next"]["context"], ctx)
+        out = self.append(draft("punk-03-edison", "proposal", refs=["r-001"]))
+        code, ctx = self.run_cli("context")
+        self.assertEqual(out["next"]["action"], "invoke_satellite")
+        self.assertEqual(out["next"]["context"], ctx)
+        out = self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED", refs=["r-002"]))
+        self.assertEqual(out["next"]["action"], "await_hitl")
+        self.assertNotIn("context", out["next"])
+        out = self.run_cli("approve")[1]
+        self.assertEqual(out["next"]["action"], "completed")
+        self.assertNotIn("context", out["next"])
+        self.assertNotIn("context", self.run_cli("status")[1]["next"])
+
+    def test_approve_returns_context_for_atlas(self):
+        self.init("full")
+        self.append(draft("punk-04-pythagoras", "finding"))
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-02-lilith", "critique", blocking=False))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        out = self.run_cli("approve")[1]
+        code, ctx = self.run_cli("context")
+        self.assertEqual(out["next"]["actor"], "punk-05-atlas")
+        self.assertEqual(out["next"]["context"], ctx)
+
+
+class ReportTests(Base):
+    def test_completed_without_atlas_uses_last_proposal_and_verdict(self):
+        self.init("light", "--hitl-after-verdict")
+        self.append(draft("punk-03-edison", "proposal", content="Plan A."))
+        self.append(draft("punk-01-shaka", "verdict", content="Fine.", verdict="APPROVED"))
+        self.run_cli("approve")
+        code, out = self.run_cli("report")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["record_ids"], ["r-002", "r-003"])
+        self.assertEqual((out["status"], out["iteration"], out["passed_hitl"]), ("completed", 0, True))
+        text = (self.dir / "deliverable.md").read_text(encoding="utf-8")
+        self.assertEqual(out["path"], str(self.dir / "deliverable.md"))
+        stored = {r["id"]: r for r in self.doc()["records"]}
+        for rid in out["record_ids"]:
+            rec = stored[rid]
+            heading = f"## {rid} — {rec['author']} ({rec['type']})"
+            self.assertIn(heading + "\n\n" + rec["content"] + "\n", text)
+        self.assertIn("- Status: completed", text)
+        self.assertNotIn("\r", text)
+
+    def test_last_revision_wins_and_passed_hitl_false(self):
+        self.init("standard")
+        self.append(draft("punk-04-pythagoras", "finding"))
+        self.append(draft("punk-03-edison", "proposal", content="V1"))
+        self.append(draft("punk-02-lilith", "critique", blocking=True))
+        self.append(draft("punk-03-edison", "revision", content="V2"))
+        self.append(draft("punk-02-lilith", "critique", blocking=False))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        code, out = self.run_cli("report")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["record_ids"], ["r-005", "r-007"])
+        self.assertFalse(out["passed_hitl"])
+        self.assertEqual(out["iteration"], 1)
+
+    def test_full_mission_reports_atlas_artifacts(self):
+        self.init("full")
+        self.append(draft("punk-04-pythagoras", "finding"))
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-02-lilith", "critique", blocking=False))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        self.run_cli("approve")
+        self.append(draft("punk-05-atlas", "artifact", content="Artifact body."))
+        self.append(draft("punk-06-york", "ops_log", "Done."))
+        code, out = self.run_cli("report")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["record_ids"], ["r-007", "r-005"])
+        self.assertTrue(out["passed_hitl"])
+        self.assertIn("Artifact body.", (self.dir / "deliverable.md").read_text(encoding="utf-8"))
+
+    def test_failed_reports_verdict_and_reason(self):
+        self.init("light")
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", content="No.", verdict="REJECTED"))
+        code, out = self.run_cli("report")
+        self.assertEqual(code, 0, out)
+        self.assertEqual((out["status"], out["record_ids"], out["passed_hitl"]), ("failed", ["r-003"], False))
+        text = (self.dir / "deliverable.md").read_text(encoding="utf-8")
+        self.assertIn("No.", text)
+        self.assertIn("Verdict REJECTED (r-003)", text)
+
+    def test_aborted_without_verdict_reports_reason(self):
+        self.init("light")
+        self.run_cli("abort", "--reason", "Changed my mind")
+        code, out = self.run_cli("report")
+        self.assertEqual(code, 0, out)
+        self.assertEqual((out["status"], out["record_ids"]), ("aborted", []))
+        self.assertIn("Changed my mind", (self.dir / "deliverable.md").read_text(encoding="utf-8"))
+
+    def test_active_mission_is_an_error_and_writes_nothing(self):
+        self.init("light")
+        before = self.snapshot()
+        code, out = self.run_cli("report")
+        self.assertNotEqual(code, 0)
+        self.assertFalse(out["ok"])
         self.assertEqual(self.snapshot(), before)
 
 

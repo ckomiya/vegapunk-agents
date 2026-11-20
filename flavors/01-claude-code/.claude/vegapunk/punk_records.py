@@ -284,7 +284,13 @@ class Mission:
         return None
 
     # -- next-step report ------------------------------------------------
-    def next_info(self) -> dict:
+    def next_info(self, with_context: bool = False) -> dict:
+        info = self._next_info()
+        if with_context and info["action"] == "invoke_satellite":
+            info["context"] = build_context(self, info["actor"], False, [])
+        return info
+
+    def _next_info(self) -> dict:
         phase = self.phase
         status = self.doc["state"]["status"]
         if status == "completed":
@@ -416,7 +422,12 @@ def cmd_init(args) -> dict:
     )
     m.go(m.next_linear("DEFINED"))
     commit(m, records_schema, event_schema, {directory / ENGINE_FILE: dump_json(engine)})
-    return {"ok": True, "mission_id": mission_id, "mission_dir": str(directory), "next": m.next_info()}
+    return {
+        "ok": True,
+        "mission_id": mission_id,
+        "mission_dir": str(directory),
+        "next": m.next_info(with_context=True),
+    }
 
 
 def read_draft_text(source: str) -> str:
@@ -538,7 +549,7 @@ def cmd_append(args) -> dict:
         m.go(m.next_linear(phase))
 
     commit(m, records_schema, event_schema)
-    return {"ok": True, "records": [r["id"] for r in written], "next": m.next_info()}
+    return {"ok": True, "records": [r["id"] for r in written], "next": m.next_info(with_context=True)}
 
 
 def cmd_approve(args) -> dict:
@@ -551,7 +562,7 @@ def cmd_approve(args) -> dict:
     m.add_record("stella", "approval", content, [verdict["id"]] if verdict else [], {})
     m.go(m.next_linear("HITL_APPROVAL"))
     commit(m, records_schema, event_schema)
-    return {"ok": True, "next": m.next_info()}
+    return {"ok": True, "next": m.next_info(with_context=True)}
 
 
 def cmd_abort(args) -> dict:
@@ -605,6 +616,60 @@ def cmd_show(args) -> dict:
     return {"ok": True, "records": [by_id[rid] for rid in args.ids]}
 
 
+DELIVERABLE_FILE = "deliverable.md"
+
+
+def cmd_report(args) -> dict:
+    directory = resolve_dir(args)
+    m, _, _ = load_mission(directory)
+    status = m.doc["state"]["status"]
+    if status == "active":
+        raise EngineError("report is only valid on a finished mission (status: active)")
+    records = m.doc["records"]
+    verdict = m.last_record("verdict")
+    chosen: list[dict] = []
+    if status == "completed":
+        chosen = [r for r in records if r["type"] == "artifact"]
+        if not chosen:
+            before = records[: records.index(verdict)] if verdict else records
+            for r in reversed(before):
+                if r["type"] in ("proposal", "revision"):
+                    chosen = [r]
+                    break
+    if verdict:
+        chosen.append(verdict)
+
+    parts = [
+        f"# Mission {m.doc['mission']['id']}\n\n"
+        f"- Status: {status}\n- Iteration: {m.iteration}\n"
+    ]
+    for r in chosen:
+        parts.append(f"## {r['id']} — {r['author']} ({r['type']})\n\n{r['content']}\n")
+    if status != "completed":
+        reasons = [
+            e["payload"].get("reason")
+            for e in m.events
+            if e["type"] in ("mission_failed", "mission_aborted")
+        ]
+        if reasons and reasons[-1]:
+            parts.append(f"## Recorded reason\n\n{reasons[-1]}\n")
+    path = directory / DELIVERABLE_FILE
+    try:
+        atomic_write_all({path: "\n".join(parts).encode("utf-8")})
+    except OSError as exc:
+        raise EngineError(f"cannot write {path}: {exc}") from None
+    return {
+        "ok": True,
+        "path": str(path),
+        "status": status,
+        "iteration": m.iteration,
+        "record_ids": [r["id"] for r in chosen],
+        "passed_hitl": any(
+            e["type"] == "phase_changed" and e["payload"]["to"] == "HITL_APPROVAL" for e in m.events
+        ),
+    }
+
+
 def select_context(m: Mission, satellite: str, full: bool, include: list[str]) -> tuple[list[dict], int]:
     """Pick the records to pass to the active satellite (read-only).
 
@@ -651,7 +716,12 @@ def cmd_context(args) -> dict:
             f"context is only valid while a satellite is active (current phase: {m.phase}, "
             f"status: {m.doc['state']['status']})"
         )
-    passed, readable = select_context(m, satellite, args.full, args.include or [])
+    return build_context(m, satellite, args.full, args.include or [])
+
+
+def build_context(m: Mission, satellite: str, full: bool, include: list[str]) -> dict:
+    """The exact output of the `context` command for the given satellite."""
+    passed, readable = select_context(m, satellite, full, include)
     mission = m.doc["mission"]
     return {
         "ok": True,
@@ -660,7 +730,7 @@ def cmd_context(args) -> dict:
         "state": {"phase": m.phase, "iteration": m.iteration},
         "records": passed,
         "selection": {
-            "mode": "full" if args.full else "selective",
+            "mode": "full" if full else "selective",
             "records_passed": len(passed),
             "records_readable": readable,
             "content_chars": sum(len(r["content"]) for r in passed),
@@ -718,6 +788,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("show", parents=[common], help="print full records by id, in the order requested (read-only)")
     p.add_argument("ids", nargs="+", metavar="ID")
     p.set_defaults(func=cmd_show)
+
+    p = sub.add_parser("report", parents=[common], help="write deliverable.md for a finished mission")
+    p.set_defaults(func=cmd_report)
     return ap
 
 

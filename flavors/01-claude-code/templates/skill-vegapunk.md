@@ -30,7 +30,7 @@ The mission goal arrives in `$ARGUMENTS`. If it is empty, ask Stella for it.
 3. Ask for `max_iterations` (default 2). Only if the roster does not include `punk-05-atlas`, ask whether she wants human approval after the verdict (`--hitl-after-verdict`). With Atlas, approval is always mandatory.
 4. Show a summary and do NOT run `init` until Stella explicitly confirms.
 5. Then run `init` with `--goal`, `--constraint` (repeat), `--done-criterion` (repeat), `--mode`, `--roster` (only if changed), `--max-iterations` and `--hitl-after-verdict` as applicable. Tell Stella where the mission folder is.
-6. Keep `mission_dir` from the `init` output and pass it as `--mission-dir` in ALL later commands (`status`, `context`, `append`, `approve`, `abort`, `fail`, `show`).
+6. Keep `mission_dir` from the `init` output and pass it as `--mission-dir` in ALL later commands (`status`, `context`, `append`, `approve`, `abort`, `fail`, `show`, `report`).
 
 ## 3. Loop
 
@@ -38,8 +38,8 @@ Always follow `next.action` from the last script output.
 
 ### invoke_satellite
 
-a. Run `context` (add `--include IDS` only if that satellite asked for specific records in a note; never other types).
-b. Invoke with the Agent tool EXACTLY the subagent named in `next.actor`: never another, never two at once. Call the Agent tool with run_in_background set to false. Wait for its complete response before continuing. The subagent prompt is the JSON output of `context`, unchanged, followed by this section:
+a. The satellite's context is `next.context` from the last script output. Run `context` only if you need `--include IDS` (a satellite asked for specific records in a note; never other types). Do not run `status` between satellites: `next` already says what follows.
+b. Invoke with the Agent tool EXACTLY the subagent named in `next.actor`: never another, never two at once. Call the Agent tool with run_in_background set to false. Wait for its complete response before continuing. The subagent prompt is `next.context` (or the output of `context` if you ran it), unchanged, as JSON, followed by this section:
 
 ```
 Runtime limits:
@@ -58,7 +58,12 @@ Get the content with `show <ids>` (the verdict, and the approved proposal/revisi
 
 ### completed / failed / aborted
 
-The final report includes the status and the iteration taken from `status`, the deliverable verbatim via `show <ids>` without summarizing it (use `status` for the ids: the content of the last approved proposal or revision, or Atlas's artifacts; never from memory or the drafts) and the paths of `punk-records.json` and `events.jsonl`. Do not suggest editing the deliverable outside the cycle: if Stella wants changes, tell her the intended way is a new mission that references this one.
+For the final report, run `report`. It writes `<mission-dir>/deliverable.md` and prints the path, the status, the iteration, the included record ids and `passed_hitl`.
+
+- If `passed_hitl` is true, Stella already saw the full deliverable: give the status, the iteration and the path of `deliverable.md`, without repeating the content.
+- If `passed_hitl` is false, show the content of `deliverable.md` as is: read it with `show` of the ids returned by `report`; do not reconstruct it from memory or the drafts, and do not summarize it.
+
+In both cases also give the paths of `punk-records.json` and `events.jsonl`. Do not suggest editing the deliverable outside the cycle: if Stella wants changes, tell her the intended way is a new mission that references this one.
 
 ### Abort
 

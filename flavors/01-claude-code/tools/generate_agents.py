@@ -56,6 +56,7 @@ ROLE_IDS = ["stella", *SATELLITE_IDS]
 ROLE_KEYS = ("reads", "writes", "active_phases")
 MODEL_ALIASES = {"haiku", "sonnet", "opus", "fable", "inherit"}
 COLORS = {"red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"}
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 ALLOWED_TOOLS = {"Read", "Grep", "Glob", "Edit", "Write", "Bash", "WebSearch", "WebFetch"}
 
 HEADER = (
@@ -111,6 +112,13 @@ def shared_body() -> str:
 
 def load_config() -> dict:
     cfg = yaml.safe_load(read_text(CONFIG_PATH)) or {}
+    engine = cfg.get("engine")
+    if not isinstance(engine, dict):
+        raise GenError(f"{rel(CONFIG_PATH)}: missing 'engine' mapping")
+    if engine.get("effort") not in EFFORT_LEVELS:
+        raise GenError(
+            f"engine: invalid effort {engine.get('effort')!r} (use one of {list(EFFORT_LEVELS)})"
+        )
     sats = cfg.get("satellites")
     if not isinstance(sats, dict):
         raise GenError(f"{rel(CONFIG_PATH)}: missing 'satellites' mapping")
@@ -143,7 +151,7 @@ def load_config() -> dict:
         bad = [t for t in tools if t not in ALLOWED_TOOLS]
         if bad:
             raise GenError(f"{sid}: unsupported tools {bad} (allowed: {sorted(ALLOWED_TOOLS)})")
-    return sats
+    return cfg
 
 
 def render(sid: str, conf: dict, shared: str) -> str:
@@ -203,7 +211,7 @@ def stella_part_b() -> str:
     raise GenError(f"{rel(path)}: no '{STELLA_PART_B_HEADING}' heading found")
 
 
-def build_skill() -> str:
+def build_skill(effort: str) -> str:
     """SKILL.md text: front matter + template body with Part B of stella.md substituted."""
     lines = read_text(SKILL_TEMPLATE).split("\n")
     i = 0
@@ -232,6 +240,7 @@ def build_skill() -> str:
         + "name: vegapunk\n"
         + f"description: {json.dumps(description, ensure_ascii=False)}\n"
         + "argument-hint: [mission goal]\n"
+        + f"effort: {effort}\n"
         + "disable-model-invocation: true\n"
         + "allowed-tools: Bash(python .claude/vegapunk/punk_records.py *)\n"
         + "---\n"
@@ -263,8 +272,9 @@ def build_roles() -> str:
     return json.dumps(roles, indent=2, ensure_ascii=False) + "\n"
 
 
-def expected_outputs(sats: dict) -> dict[Path, bytes]:
+def expected_outputs(cfg: dict) -> dict[Path, bytes]:
     """Every generated file (absolute path -> exact bytes)."""
+    sats = cfg["satellites"]
     shared = shared_body()
     out: dict[Path, bytes] = {}
     for sid in SATELLITE_IDS:
@@ -272,7 +282,7 @@ def expected_outputs(sats: dict) -> dict[Path, bytes]:
     for name in SCHEMA_FILES:
         out[RUNTIME_DIR / name] = (SCHEMAS_DIR / name).read_bytes()
     out[RUNTIME_DIR / "roles.json"] = build_roles().encode("utf-8")
-    out[SKILLS_DIR / "vegapunk" / "SKILL.md"] = build_skill().encode("utf-8")
+    out[SKILLS_DIR / "vegapunk" / "SKILL.md"] = build_skill(cfg["engine"]["effort"]).encode("utf-8")
     return out
 
 
