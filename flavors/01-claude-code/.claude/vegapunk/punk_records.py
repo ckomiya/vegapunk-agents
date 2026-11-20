@@ -552,6 +552,34 @@ def cmd_append(args) -> dict:
     return {"ok": True, "records": [r["id"] for r in written], "next": m.next_info(with_context=True)}
 
 
+def cmd_note(args) -> dict:
+    m, records_schema, event_schema = load_mission(resolve_dir(args))
+    status = m.doc["state"]["status"]
+    if status != "active":
+        raise EngineError(f"mission is {status}; notes can no longer be recorded")
+    if args.text is not None:
+        text = args.text
+    else:
+        try:
+            text = Path(args.text_file).read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise EngineError(f"cannot read note from {args.text_file}: {exc}") from None
+        if text.endswith("\r\n"):  # drop only the final line break of the file
+            text = text[:-2]
+        elif text.endswith("\n"):
+            text = text[:-1]
+    if not text.strip():
+        raise EngineError("note text must not be empty")
+    refs = list(args.refs or [])
+    ids = {r["id"] for r in m.doc["records"]}
+    missing = [rid for rid in refs if rid not in ids]
+    if missing:
+        raise EngineError([f"ref {rid!r} does not exist" for rid in missing])
+    m.add_record("stella", "note", text, refs, {})
+    commit(m, records_schema, event_schema)
+    return {"ok": True, "record_id": m.doc["records"][-1]["id"], "next": m.next_info(with_context=True)}
+
+
 def cmd_approve(args) -> dict:
     m, records_schema, event_schema = load_mission(resolve_dir(args))
     if m.doc["state"]["status"] != "active" or m.phase != "HITL_APPROVAL":
@@ -763,6 +791,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("append", parents=[common], help="append satellite record drafts")
     p.add_argument("--draft-file", required=True, help="JSON array file, or '-' for stdin")
     p.set_defaults(func=cmd_append)
+
+    p = sub.add_parser("note", parents=[common], help="record Stella's own words as a note")
+    src = p.add_mutually_exclusive_group(required=True)
+    src.add_argument("--text", help="note text, recorded as given")
+    src.add_argument("--text-file", help="file holding the note text (final line break dropped)")
+    p.add_argument("--refs", nargs="+", action="extend", metavar="ID", help="records the note refers to")
+    p.set_defaults(func=cmd_note)
 
     p = sub.add_parser("approve", parents=[common], help="Stella approves at HITL_APPROVAL")
     p.add_argument("--note")

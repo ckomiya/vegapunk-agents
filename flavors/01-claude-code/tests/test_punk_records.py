@@ -705,5 +705,103 @@ class ReportTests(Base):
         self.assertEqual(self.snapshot(), before)
 
 
+class NoteTests(Base):
+    TEXT = "  Keep it  short.\n\nSecond paragraph, with   spaces.  "
+
+    def note(self, *args):
+        return self.run_cli("note", *args)
+
+    def test_creates_stella_note_with_exact_text(self):
+        self.init("standard")
+        before = self.doc()["state"]
+        code, out = self.note("--text", self.TEXT, "--refs", "r-001")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["record_id"], "r-002")
+        self.assertEqual((out["next"]["phase"], out["next"]["action"]), ("RESEARCH", "invoke_satellite"))
+        doc, events = self.assert_valid()
+        rec = doc["records"][-1]
+        self.assertEqual((rec["author"], rec["type"], rec["content"], rec["refs"]),
+                         ("stella", "note", self.TEXT, ["r-001"]))
+        self.assertEqual((rec["phase"], rec["iteration"]), ("RESEARCH", 0))
+        self.assertEqual(doc["state"], before)
+        self.assertEqual(events[-1]["type"], "record_written")
+        self.assertEqual(events[-1]["actor"], "stella")
+        self.assertEqual(events[-1]["payload"], {"record_id": "r-002", "record_type": "note"})
+
+    def test_text_file_drops_only_the_final_line_break(self):
+        self.init("light")
+        path = Path(self._tmp.name) / "n.txt"
+        path.write_bytes((self.TEXT + "\n").encode("utf-8"))
+        code, out = self.note("--text-file", str(path))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.doc()["records"][-1]["content"], self.TEXT)
+        path.write_bytes((self.TEXT + "\r\n").encode("utf-8"))
+        self.note("--text-file", str(path))
+        self.assertEqual(self.doc()["records"][-1]["content"], self.TEXT)
+        self.assert_valid()
+
+    def test_does_not_change_phase_or_iteration_mid_loop(self):
+        self.init("standard")
+        self.append(draft("punk-04-pythagoras", "finding"))
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-02-lilith", "critique", blocking=True))  # REVISION, iteration 1
+        code, out = self.note("--text", "Mind the budget.")
+        self.assertEqual(code, 0, out)
+        doc, _ = self.assert_valid()
+        self.assertEqual((doc["state"]["phase"], doc["state"]["iteration"]), ("REVISION", 1))
+        self.assertEqual(doc["records"][-1]["iteration"], 1)
+        self.assertEqual(self.phases()[-1], "REVISION")
+
+    def test_errors_write_nothing(self):
+        self.init("light")
+        before = self.snapshot()
+        for args in (("--text", ""), ("--text", "  \n\t "), ("--text", "x", "--refs", "r-099"),
+                     ("--text-file", str(Path(self._tmp.name) / "missing.txt"))):
+            code, out = self.note(*args)
+            self.assertNotEqual(code, 0, args)
+            self.assertFalse(out["ok"])
+            self.assertTrue(out["errors"])
+        self.assertEqual(self.snapshot(), before)
+
+    def test_error_in_terminal_states(self):
+        self.init("light")
+        self.run_cli("abort", "--reason", "x")
+        before = self.snapshot()
+        code, out = self.note("--text", "Late.")
+        self.assertNotEqual(code, 0)
+        self.assertFalse(out["ok"])
+        self.assertEqual(self.snapshot(), before)
+        # completed
+        self.dir = self.dir.parent / "m-done"
+        self.init("light")
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        self.assertNotEqual(self.note("--text", "Late.")[0], 0)
+        # failed
+        self.dir = self.dir.parent / "m-failed"
+        self.init("light")
+        self.run_cli("fail", "--reason", "x")
+        self.assertNotEqual(self.note("--text", "Late.")[0], 0)
+
+    def test_valid_at_await_hitl_without_context(self):
+        self.init("light", "--hitl-after-verdict")
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        code, out = self.note("--text", "One more thing.")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["next"], {"phase": "HITL_APPROVAL", "actor": "stella", "action": "await_hitl"})
+        self.assert_valid()
+
+    def test_next_context_includes_the_note(self):
+        self.init("standard")
+        code, out = self.note("--text", "Prefer open sources.")
+        self.assertEqual(code, 0, out)
+        stored = self.doc()["records"][-1]
+        self.assertIn(stored, out["next"]["context"]["records"])
+        code, ctx = self.run_cli("context")
+        self.assertEqual(out["next"]["context"], ctx)
+        self.assertIn("r-002", [r["id"] for r in ctx["records"]])
+
+
 if __name__ == "__main__":
     unittest.main()

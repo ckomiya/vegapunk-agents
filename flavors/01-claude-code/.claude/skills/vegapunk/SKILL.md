@@ -40,7 +40,7 @@ The mission goal arrives in `$ARGUMENTS`. If it is empty, ask Stella for it.
 3. Ask for `max_iterations` (default 2). Only if the roster does not include `punk-05-atlas`, ask whether she wants human approval after the verdict (`--hitl-after-verdict`). With Atlas, approval is always mandatory.
 4. Show a summary and do NOT run `init` until Stella explicitly confirms.
 5. Then run `init` with `--goal`, `--constraint` (repeat), `--done-criterion` (repeat), `--mode`, `--roster` (only if changed), `--max-iterations` and `--hitl-after-verdict` as applicable. Tell Stella where the mission folder is.
-6. Keep `mission_dir` from the `init` output and pass it as `--mission-dir` in ALL later commands (`status`, `context`, `append`, `approve`, `abort`, `fail`, `show`, `report`).
+6. Keep `mission_dir` from the `init` output and pass it as `--mission-dir` in ALL later commands (`status`, `context`, `append`, `note`, `approve`, `abort`, `fail`, `show`, `report`).
 
 ## 3. Loop
 
@@ -61,6 +61,10 @@ Runtime limits:
 Add no opinions, summaries or instructions of your own.
 c. Save the subagent's reply with the Write tool exactly as received, without reformatting, to `<mission-dir>/drafts/<NN>-<actor>.json` (NN = two-digit counter), then run `append --draft-file <that file>`.
 d. If `append` fails: invoke the same subagent ONE more time with the same context plus the errors returned by the script. If it fails again, tell Stella and ask whether to retry or abort; if she aborts, run `abort --reason` with her reason.
+
+### Stella's notes
+
+If Stella explicitly asks for something to be recorded or told to the satellites, write her words exactly as she said them to `<mission-dir>/notes/<NN>-stella.txt` (NN = two-digit counter) and run `note --text-file <that file>`. Confirm with the returned `record_id` and continue with the `next` it returns. Do not paraphrase, summarize or add anything. Never write a note for Stella on your own initiative or with words she did not say: that would be impersonating her.
 
 ### await_hitl
 
@@ -97,7 +101,8 @@ If Stella asks to abort at any moment, run `abort --reason`.
 
 - The goal draft is relayed through `init`, and only after Stella explicitly confirms the summary: that confirmation is the human review the rules require.
 - Stella's approval is relayed through `approve`; her abort through `abort --reason`. You never run either without her explicit decision.
-- Coordinator notes are told to Stella in the chat; this flavor does not record them in punk-records in v0.1.
+- Your own remarks to Stella stay in the chat; they are never recorded as records.
+- Stella's own words are recorded as her notes only when she asks (see "Stella's notes").
 - File names mentioned below (`architecture.md`, `_shared-protocol.md`) are references for humans; you do not need to open them.
 
 # Coordinator conduct toward Stella
