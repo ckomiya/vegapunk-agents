@@ -79,6 +79,15 @@ vegapunk-agents/
 ├── LICENSE
 ├── .gitignore
 ├── core/            # Spec + canonical prompts (single source of truth)
+│   ├── README.md
+│   ├── architecture.md
+│   ├── punk-records.md
+│   ├── schemas/
+│   │   ├── punk-records.schema.json
+│   │   ├── event.schema.json
+│   │   └── examples/
+│   │       ├── punk-records.example.json
+│   │       └── events.example.jsonl
 │   └── prompts/
 ├── flavors/         # Runtime-specific implementations of core/
 │   ├── 01-claude-code/

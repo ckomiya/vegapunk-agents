@@ -1,0 +1,20 @@
+{"ts":"2026-11-20T10:00:00Z","mission_id":"mission-0001","seq":1,"type":"mission_started","actor":"stella","payload":{"mode":"standard","roster":["punk-04-pythagoras","punk-03-edison","punk-02-lilith","punk-01-shaka"]}}
+{"ts":"2026-11-20T10:00:30Z","mission_id":"mission-0001","seq":2,"type":"record_written","actor":"stella","payload":{"record_id":"r-001","record_type":"goal"}}
+{"ts":"2026-11-20T10:01:00Z","mission_id":"mission-0001","seq":3,"type":"phase_changed","actor":"system","payload":{"from":"DEFINED","to":"RESEARCH"}}
+{"ts":"2026-11-20T10:03:00Z","mission_id":"mission-0001","seq":4,"type":"record_written","actor":"punk-04-pythagoras","payload":{"record_id":"r-002","record_type":"finding"}}
+{"ts":"2026-11-20T10:03:30Z","mission_id":"mission-0001","seq":5,"type":"phase_changed","actor":"system","payload":{"from":"RESEARCH","to":"IDEATION"}}
+{"ts":"2026-11-20T10:06:00Z","mission_id":"mission-0001","seq":6,"type":"record_written","actor":"punk-03-edison","payload":{"record_id":"r-003","record_type":"proposal"}}
+{"ts":"2026-11-20T10:06:30Z","mission_id":"mission-0001","seq":7,"type":"phase_changed","actor":"system","payload":{"from":"IDEATION","to":"CRITIQUE"}}
+{"ts":"2026-11-20T10:09:00Z","mission_id":"mission-0001","seq":8,"type":"record_written","actor":"punk-02-lilith","payload":{"record_id":"r-004","record_type":"critique"}}
+{"ts":"2026-11-20T10:09:30Z","mission_id":"mission-0001","seq":9,"type":"phase_changed","actor":"system","payload":{"from":"CRITIQUE","to":"REVISION"}}
+{"ts":"2026-11-20T10:12:00Z","mission_id":"mission-0001","seq":10,"type":"record_written","actor":"punk-03-edison","payload":{"record_id":"r-005","record_type":"revision"}}
+{"ts":"2026-11-20T10:12:30Z","mission_id":"mission-0001","seq":11,"type":"phase_changed","actor":"system","payload":{"from":"REVISION","to":"CRITIQUE"}}
+{"ts":"2026-11-20T10:14:00Z","mission_id":"mission-0001","seq":12,"type":"record_written","actor":"punk-02-lilith","payload":{"record_id":"r-006","record_type":"critique"}}
+{"ts":"2026-11-20T10:14:30Z","mission_id":"mission-0001","seq":13,"type":"phase_changed","actor":"system","payload":{"from":"CRITIQUE","to":"VERDICT"}}
+{"ts":"2026-11-20T10:16:00Z","mission_id":"mission-0001","seq":14,"type":"record_written","actor":"punk-01-shaka","payload":{"record_id":"r-007","record_type":"verdict"}}
+{"ts":"2026-11-20T10:16:30Z","mission_id":"mission-0001","seq":15,"type":"phase_changed","actor":"system","payload":{"from":"VERDICT","to":"HITL_APPROVAL"}}
+{"ts":"2026-11-20T10:17:00Z","mission_id":"mission-0001","seq":16,"type":"hitl_requested","actor":"system","payload":{"reason":"Approve the approved convention before the mission completes.","record_id":"r-007"}}
+{"ts":"2026-11-20T10:18:30Z","mission_id":"mission-0001","seq":17,"type":"hitl_resolved","actor":"stella","payload":{"decision":"approved"}}
+{"ts":"2026-11-20T10:18:31Z","mission_id":"mission-0001","seq":18,"type":"record_written","actor":"stella","payload":{"record_id":"r-008","record_type":"approval"}}
+{"ts":"2026-11-20T10:19:00Z","mission_id":"mission-0001","seq":19,"type":"phase_changed","actor":"system","payload":{"from":"HITL_APPROVAL","to":"COMPLETED"}}
+{"ts":"2026-11-20T10:19:00Z","mission_id":"mission-0001","seq":20,"type":"mission_completed","actor":"system","payload":{}}

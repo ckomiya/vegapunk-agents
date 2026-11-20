@@ -1,0 +1,108 @@
+{
+  "schema_version": "0.1.0",
+  "mission": {
+    "id": "mission-0001",
+    "goal": "Design a naming convention for internal API endpoints.",
+    "mode": "standard",
+    "roster": ["punk-04-pythagoras", "punk-03-edison", "punk-02-lilith", "punk-01-shaka"],
+    "constraints": [
+      "Must work for both REST and event-style endpoints.",
+      "Must be explainable in under one page."
+    ],
+    "max_iterations": 2,
+    "created_at": "2026-11-20T10:00:00Z"
+  },
+  "state": {
+    "phase": "COMPLETED",
+    "iteration": 1,
+    "status": "completed",
+    "updated_at": "2026-11-20T10:19:00Z"
+  },
+  "records": [
+    {
+      "id": "r-001",
+      "author": "stella",
+      "type": "goal",
+      "phase": "DEFINED",
+      "iteration": 0,
+      "content": "Design a naming convention for internal API endpoints.\n\nConstraints:\n- Must work for both REST and event-style endpoints.\n- Must be explainable in under one page.",
+      "refs": [],
+      "created_at": "2026-11-20T10:00:30Z"
+    },
+    {
+      "id": "r-002",
+      "author": "punk-04-pythagoras",
+      "type": "finding",
+      "phase": "RESEARCH",
+      "iteration": 0,
+      "content": "Common conventions use plural nouns for collections (`/orders`), lowercase kebab-case path segments, and verbs only for actions that do not map to resources. Versioning is most often a path prefix (`/v1/`). Event names usually follow `domain.entity.past-tense-verb`.",
+      "refs": ["r-001"],
+      "confidence": 0.8,
+      "created_at": "2026-11-20T10:03:00Z"
+    },
+    {
+      "id": "r-003",
+      "author": "punk-03-edison",
+      "type": "proposal",
+      "phase": "IDEATION",
+      "iteration": 0,
+      "content": "Proposal:\n1. Paths: `/v{major}/{domain}/{collection}/{id}`, lowercase kebab-case, plural collections.\n2. Actions: `POST /v1/{domain}/{collection}/{id}:{action}`.\n3. Events: `{domain}.{entity}.{past-tense-verb}`.\n4. Every endpoint is documented in one table: name, path, owner.",
+      "refs": ["r-001", "r-002"],
+      "confidence": 0.6,
+      "created_at": "2026-11-20T10:06:00Z"
+    },
+    {
+      "id": "r-004",
+      "author": "punk-02-lilith",
+      "type": "critique",
+      "phase": "CRITIQUE",
+      "iteration": 0,
+      "content": "Blocking issues:\n- The `:{action}` suffix is a special character that some gateways and proxies treat inconsistently; it is not justified by the findings.\n- No rule for how a domain name is chosen or renamed, so the `{domain}` segment will drift.\n\nNon-blocking: the one-page limit is not checked.",
+      "refs": ["r-003"],
+      "created_at": "2026-11-20T10:09:00Z"
+    },
+    {
+      "id": "r-005",
+      "author": "punk-03-edison",
+      "type": "revision",
+      "phase": "REVISION",
+      "iteration": 1,
+      "content": "Revision:\n1. Paths unchanged.\n2. Actions: `POST /v1/{domain}/{collection}/{id}/{action-verb}` with a kebab-case verb, replacing the `:` suffix.\n3. Domains come from a short registry file; renaming a domain requires a new major version.\n4. Events unchanged.\nThe full convention fits on one page.",
+      "refs": ["r-003", "r-004"],
+      "confidence": 0.75,
+      "created_at": "2026-11-20T10:12:00Z"
+    },
+    {
+      "id": "r-006",
+      "author": "punk-02-lilith",
+      "type": "critique",
+      "phase": "CRITIQUE",
+      "iteration": 1,
+      "content": "Both blocking issues are resolved. Remaining risk: the registry needs an owner. Non-blocking; no further revision required.",
+      "refs": ["r-005", "r-004"],
+      "created_at": "2026-11-20T10:14:00Z"
+    },
+    {
+      "id": "r-007",
+      "author": "punk-01-shaka",
+      "type": "verdict",
+      "phase": "VERDICT",
+      "iteration": 1,
+      "content": "The revision is internally consistent, matches the findings and satisfies both constraints. The registry owner is a follow-up, not a blocker.",
+      "refs": ["r-005", "r-006"],
+      "verdict": "APPROVED",
+      "confidence": 0.9,
+      "created_at": "2026-11-20T10:16:00Z"
+    },
+    {
+      "id": "r-008",
+      "author": "stella",
+      "type": "approval",
+      "phase": "HITL_APPROVAL",
+      "iteration": 1,
+      "content": "Approved. I will own the domain registry.",
+      "refs": ["r-007"],
+      "created_at": "2026-11-20T10:18:30Z"
+    }
+  ]
+}

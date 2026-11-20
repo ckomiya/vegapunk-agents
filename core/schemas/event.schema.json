@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ckomiya/vegapunk-agents/blob/main/core/schemas/event.schema.json",
+  "$comment": "SPDX-License-Identifier: Apache-2.0 | Copyright 2026 Christian Gonzales Komiya. The $defs enumerations for ids and phases mirror punk-records.schema.json and MUST be kept identical.",
+  "title": "Mission event",
+  "description": "One event per line in events.jsonl. Domain-agnostic: no field assumes a specific use case.",
+  "type": "object",
+  "required": ["ts", "mission_id", "seq", "type", "actor", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "ts": { "type": "string", "format": "date-time" },
+    "mission_id": { "$ref": "#/$defs/id" },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonically increasing per mission, starting at 1."
+    },
+    "type": {
+      "enum": [
+        "mission_started",
+        "phase_changed",
+        "satellite_activated",
+        "satellite_idle",
+        "record_written",
+        "hitl_requested",
+        "hitl_resolved",
+        "mission_completed",
+        "mission_failed",
+        "mission_aborted"
+      ]
+    },
+    "actor": { "$ref": "#/$defs/actorId" },
+    "payload": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "mission_started" } }, "required": ["type"] },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["mode", "roster"],
+            "properties": {
+              "mode": { "enum": ["light", "standard", "full"] },
+              "roster": { "type": "array", "items": { "$ref": "#/$defs/satelliteId" } }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "phase_changed" } }, "required": ["type"] },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "$ref": "#/$defs/phase" },
+              "to": { "$ref": "#/$defs/phase" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "enum": ["satellite_activated", "satellite_idle"] } },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "actor": { "$ref": "#/$defs/satelliteId" },
+          "payload": {
+            "properties": { "phase": { "$ref": "#/$defs/phase" } }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "record_written" } }, "required": ["type"] },
+      "then": {
+        "properties": {
+          "actor": { "$ref": "#/$defs/authorId" },
+          "payload": {
+            "required": ["record_id", "record_type"],
+            "properties": {
+              "record_id": { "$ref": "#/$defs/id" },
+              "record_type": { "$ref": "#/$defs/recordType" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "hitl_requested" } }, "required": ["type"] },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["reason"],
+            "properties": {
+              "reason": { "type": "string" },
+              "record_id": { "$ref": "#/$defs/id" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "hitl_resolved" } }, "required": ["type"] },
+      "then": {
+        "properties": {
+          "actor": { "const": "stella" },
+          "payload": {
+            "required": ["decision"],
+            "properties": { "decision": { "enum": ["approved", "aborted"] } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "enum": ["mission_failed", "mission_aborted"] } },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["reason"],
+            "properties": { "reason": { "type": "string" } }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "satelliteId": {
+      "enum": [
+        "punk-01-shaka",
+        "punk-02-lilith",
+        "punk-03-edison",
+        "punk-04-pythagoras",
+        "punk-05-atlas",
+        "punk-06-york"
+      ]
+    },
+    "authorId": {
+      "enum": [
+        "stella",
+        "punk-01-shaka",
+        "punk-02-lilith",
+        "punk-03-edison",
+        "punk-04-pythagoras",
+        "punk-05-atlas",
+        "punk-06-york"
+      ]
+    },
+    "actorId": {
+      "enum": [
+        "stella",
+        "punk-01-shaka",
+        "punk-02-lilith",
+        "punk-03-edison",
+        "punk-04-pythagoras",
+        "punk-05-atlas",
+        "punk-06-york",
+        "system"
+      ]
+    },
+    "phase": {
+      "enum": [
+        "DEFINED",
+        "RESEARCH",
+        "IDEATION",
+        "CRITIQUE",
+        "REVISION",
+        "VERDICT",
+        "HITL_APPROVAL",
+        "EXECUTION",
+        "OPERATIONS",
+        "COMPLETED",
+        "FAILED",
+        "ABORTED"
+      ]
+    },
+    "recordType": {
+      "enum": [
+        "goal",
+        "finding",
+        "proposal",
+        "critique",
+        "revision",
+        "verdict",
+        "approval",
+        "artifact",
+        "ops_log",
+        "note"
+      ]
+    }
+  }
+}
