@@ -104,7 +104,7 @@ vegapunk-agents/
 ## Roadmap
 
 - [x] Phase 0 — Repo init
-- [ ] Phase 1 — Core spec & prompts
+- [x] Phase 1 — Core spec & prompts
 - [ ] Phase 2 — Claude Code native flavor
 - [ ] Phase 3 — LangGraph flavor + Startup Validator demo
 - [ ] Phase 4 — Egghead Monitor visualizer
