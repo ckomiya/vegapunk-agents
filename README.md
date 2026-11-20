@@ -4,6 +4,7 @@
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Cite this repository](https://img.shields.io/badge/Cite-this%20repository-informational.svg)](CITATION.cff)
+![Status: work in progress](https://img.shields.io/badge/status-work%20in%20progress-orange.svg)
 
 ## What is this?
 
