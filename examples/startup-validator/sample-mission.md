@@ -22,12 +22,13 @@ Constraints:
 - Use only public sources; cite every fact; mark estimates as estimates and say what they rest on.
 - Founder constraints: bootstrapped, solo founder, 3 months to the first test, under US$500 for experiments.
 - Write the deliverable files as Markdown in ./startup-validator-output/ (create it if missing).
+- Write exactly two files in ./startup-validator-output/: validation-report.md and experiment-plan.md. Do not create any other file there.
 
 Done-criteria:
 - validation-report.md has these sections: Summary and recommendation; Problem; Target customer; Market evidence; Competitors and substitutes; Business model; Key risks; What would change the recommendation.
 - experiment-plan.md has 3 experiments, each with hypothesis, method, cost, duration and success threshold, all within the founder's budget.
 - Every factual claim in the report has a source or is marked as an estimate.
-- The operations log confirms both files exist and have every section, and lists any extra file left in ./startup-validator-output/.
+- York's operations record (type ops_log, in Punk Records, not a file) confirms that validation-report.md and experiment-plan.md exist and have every required section, and lists any other file left in ./startup-validator-output/ as extra.
 ```
 
 ## Settings (tell these to the engine; not part of the goal)

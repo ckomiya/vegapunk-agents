@@ -63,6 +63,7 @@ It waits for an explicit confirmation before `init`. Then:
 - **Loop:** the engine asks `punk_records.py` for the next actor, invokes that satellite, saves its drafts and repeats until the mission ends.
 - **HITL:** Stella approves or aborts. The verdict and the deliverable are shown verbatim.
 - **Stella's notes:** on request, the engine records a note mid-mission verbatim. The next satellite reads it.
+- **Timeline:** `python .claude/vegapunk/punk_records.py timeline --mission-dir <dir>` prints the mission history as chronological Markdown, one bullet per record (read-only, no LLM, writes nothing).
 - **Abort:** possible at any time.
 - **Changes:** a change request is a new mission that references the old one.
 

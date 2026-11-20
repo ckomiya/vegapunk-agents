@@ -783,12 +783,22 @@ class ReportTests(Base):
         self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
         self.run_cli("approve")
         self.append(draft("punk-05-atlas", "artifact", content="Artifact body."))
-        self.append(draft("punk-06-york", "ops_log", "Done."))
+        self.append(draft("punk-06-york", "ops_log", "Checked.\n\nReady to close: yes."))
         code, out = self.run_cli("report")
         self.assertEqual(code, 0, out)
-        self.assertEqual(out["record_ids"], ["r-007", "r-005"])
+        self.assertEqual(out["record_ids"], ["r-007", "r-005", "r-008"])
         self.assertTrue(out["passed_hitl"])
-        self.assertIn("Artifact body.", (self.dir / "deliverable.md").read_text(encoding="utf-8"))
+        text = (self.dir / "deliverable.md").read_text(encoding="utf-8")
+        self.assertIn("Artifact body.", text)
+        self.assertIn("## Operations check (punk-06-york)\n\nChecked.\n\nReady to close: yes.\n", text)
+
+    def test_report_without_ops_log_has_no_operations_section(self):
+        self.init("light")
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        code, out = self.run_cli("report")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("Operations check", (self.dir / "deliverable.md").read_text(encoding="utf-8"))
 
     def test_failed_reports_verdict_and_reason(self):
         self.init("light")
@@ -816,6 +826,60 @@ class ReportTests(Base):
         self.assertNotEqual(code, 0)
         self.assertFalse(out["ok"])
         self.assertEqual(self.snapshot(), before)
+
+
+class TimelineTests(Base):
+    def run_timeline(self):
+        proc = subprocess.run([sys.executable, str(SCRIPT), "timeline", "--mission-dir", str(self.dir)],
+                              capture_output=True, text=True, encoding="utf-8")
+        return proc.returncode, proc.stdout
+
+    def build(self):
+        self.init("standard")
+        self.append(draft("punk-04-pythagoras", "finding", content="Finding\nwith   breaks."))
+        self.append(draft("punk-03-edison", "proposal", content="X" * 300, refs=["r-002"]))
+        self.run_cli("note", "--text", "Keep it cheap.", "--refs", "r-003")
+        self.append(draft("punk-02-lilith", "critique", content="Weak sourcing.", blocking=True, refs=["r-003"]))
+        self.append(draft("punk-03-edison", "revision", content="V2", refs=["r-003", "r-005"]))
+        self.append(draft("punk-02-lilith", "critique", content="OK now.", blocking=False))
+        self.append(draft("punk-01-shaka", "verdict", content="Fine.", verdict="APPROVED"))
+
+    def bullets(self, text):
+        return [l for l in text.split("\n") if l.startswith("- ")]
+
+    def test_chronological_with_goal_first_and_notes_in_place(self):
+        self.build()
+        before = self.snapshot()
+        code, text = self.run_timeline()
+        self.assertEqual(code, 0, text)
+        self.assertEqual(self.snapshot(), before)  # writes nothing
+        self.assertTrue(text.startswith("# Timeline"))
+        self.assertIn("Status: completed | Mode: standard | Final iteration: 1", text)
+        lines = self.bullets(text)
+        records = sorted(self.doc()["records"], key=lambda r: r["created_at"])
+        self.assertEqual(len(lines), len(records))
+        for line, rec in zip(lines, records):
+            self.assertRegex(line, r"^- \d\d:\d\d:\d\d · " + rec["id"] + " · " + rec["author"] + " · " + rec["type"])
+        authors = [l.split(" · ")[2] for l in lines]
+        self.assertEqual(authors, ["stella", "punk-04-pythagoras", "punk-03-edison", "stella", "punk-02-lilith",
+                                   "punk-03-edison", "punk-02-lilith", "punk-01-shaka"])
+        self.assertIn("goal (", lines[0])
+        self.assertIn("note (", lines[3])
+        self.assertIn("Keep it cheap.", lines[3])
+
+    def test_marks_refs_and_snippet(self):
+        self.build()
+        code, text = self.run_timeline()
+        lines = self.bullets(text)
+        self.assertIn("Finding with breaks.", text)  # newlines and runs of spaces flattened
+        self.assertIn("proposal (IDEATION, iteration 0) · refs r-002", lines[2])
+        self.assertIn("X" * 120 + "…", text)
+        self.assertNotIn("X" * 121, text)
+        self.assertEqual(text.count("blocking"), 1)
+        self.assertIn("critique (blocking, CRITIQUE, iteration 0)", lines[4])
+        self.assertIn("critique (CRITIQUE, iteration 1)", lines[6])
+        self.assertIn("verdict (APPROVED, VERDICT, iteration 1)", lines[7])
+        self.assertIn("refs r-003, r-005", lines[5])
 
 
 class NoteTests(Base):

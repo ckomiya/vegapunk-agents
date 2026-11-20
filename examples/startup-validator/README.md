@@ -36,7 +36,7 @@ Search differs per flavor: flavor 01 uses Claude Code's built-in web search; fla
 
 - `./startup-validator-output/validation-report.md` has the 8 required sections, and every factual claim has a source or is marked as an estimate.
 - `./startup-validator-output/experiment-plan.md` has 3 experiments with hypothesis, method, cost, duration and success threshold, all within the founder's budget.
-- The operations log confirms both files exist, have every section, and lists any extra file left in `./startup-validator-output/`.
+- York's operations record (type ops_log, in Punk Records, not a file) confirms that validation-report.md and experiment-plan.md exist and have every required section, and lists any other file left in ./startup-validator-output/ as extra.
 - The verdict's reasoning cites findings and addresses every blocking critique.
 
 ## Running it on your own idea

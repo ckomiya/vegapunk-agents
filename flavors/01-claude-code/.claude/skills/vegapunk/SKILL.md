@@ -83,6 +83,10 @@ For the final report, run `report`. It writes `<mission-dir>/deliverable.md` and
 - If `passed_hitl` is true, Stella already saw the full deliverable: give the status, the iteration and the path of `deliverable.md`, without repeating the content.
 - If `passed_hitl` is false, show the content of `deliverable.md` as is: read it with `show` of the ids returned by `report`; do not reconstruct it from memory or the drafts, and do not summarize it. Tool output is collapsed in Stella's view, so always print the content returned by `show` in your own message, as Markdown, each record under a heading with its id and author. Never write that it was shown above.
 
+If `record_ids` includes an `ops_log` record (punk-06-york), print its content verbatim with `show`, as Markdown under the heading "Operations check (punk-06-york)", and do not summarize it. Highlight its "Ready to close" line (quote it on its own line, in bold). This applies in both cases above.
+
+After showing the result, run `timeline` and add a section "Chronology" to the report: one bullet per record, in the same chronological order as the `timeline` output, each with the time, the id, the author and one sentence of at most 25 words saying what that agent did. Use only what the records say ("report, don't interpret"): no evaluation of your own, and never merge several records into one bullet.
+
 In both cases also give the paths of `punk-records.json` and `events.jsonl`. Do not suggest editing the deliverable outside the cycle: if Stella wants changes, tell her the intended way is a new mission that references this one.
 
 ### Abort

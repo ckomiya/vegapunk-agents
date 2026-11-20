@@ -699,6 +699,7 @@ def cmd_report(args) -> dict:
                     break
     if verdict:
         chosen.append(verdict)
+    ops_log = m.last_record("ops_log")
 
     parts = [
         f"# Mission {m.doc['mission']['id']}\n\n"
@@ -706,6 +707,8 @@ def cmd_report(args) -> dict:
     ]
     for r in chosen:
         parts.append(f"## {r['id']} — {r['author']} ({r['type']})\n\n{r['content']}\n")
+    if ops_log:
+        parts.append(f"## Operations check (punk-06-york)\n\n{ops_log['content']}\n")
     if status != "completed":
         reasons = [
             e["payload"].get("reason")
@@ -724,11 +727,57 @@ def cmd_report(args) -> dict:
         "path": str(path),
         "status": status,
         "iteration": m.iteration,
-        "record_ids": [r["id"] for r in chosen],
+        "record_ids": [r["id"] for r in chosen] + ([ops_log["id"]] if ops_log else []),
         "passed_hitl": any(
             e["type"] == "phase_changed" and e["payload"]["to"] == "HITL_APPROVAL" for e in m.events
         ),
     }
+
+
+TIMELINE_SNIPPET = 120
+
+
+def _one_line(text: str, limit: int = TIMELINE_SNIPPET) -> str:
+    flat = " ".join(text.split())
+    return flat if len(flat) <= limit else flat[:limit].rstrip() + "…"
+
+
+def cmd_timeline(args) -> str:
+    """Chronological Markdown history, one bullet per record (read-only, deterministic, writes nothing)."""
+    m, _, _ = load_mission(resolve_dir(args))
+    mission = m.doc["mission"]
+    state = m.doc["state"]
+    lines = [
+        f"# Timeline — mission {mission['id']}",
+        "",
+        f"Status: {state['status']} | Mode: {mission['mode']} | Final iteration: {m.iteration}",
+        "",
+    ]
+    ordered = sorted(enumerate(m.doc["records"]), key=lambda t: (t[1]["created_at"], t[0]))
+    for _, r in ordered:
+        marks = []
+        if r["type"] == "critique" and r.get("blocking"):
+            marks.append("blocking")
+        if r["type"] == "verdict" and r.get("verdict"):
+            marks.append(str(r["verdict"]))
+        marks += [r["phase"], f"iteration {r['iteration']}"]
+        refs = f" · refs {', '.join(r['refs'])}" if r.get("refs") else ""
+        hhmmss = _utc_time(r["created_at"])
+        lines.append(
+            f"- {hhmmss} · {r['id']} · {r['author']} · {r['type']} ({', '.join(marks)}){refs}: "
+            f"{_one_line(r['content'])}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _utc_time(stamp: str) -> str:
+    try:
+        dt = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc)
+        return dt.strftime("%H:%M:%S")
+    except ValueError:
+        return stamp
 
 
 def select_context(m: Mission, satellite: str, full: bool, include: list[str]) -> tuple[list[dict], int]:
@@ -879,6 +928,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("ids", nargs="+", metavar="ID")
     p.set_defaults(func=cmd_show)
 
+    p = sub.add_parser("timeline", parents=[common], help="print the mission history as Markdown, grouped by satellite (read-only)")
+    p.set_defaults(func=cmd_timeline)
+
     p = sub.add_parser("report", parents=[common], help="write deliverable.md for a finished mission")
     p.set_defaults(func=cmd_report)
     return ap
@@ -898,7 +950,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return fail("invalid arguments (see --help)")
     try:
-        return emit(args.func(args))
+        result = args.func(args)
+        if isinstance(result, str):  # Markdown output (timeline)
+            sys.stdout.write(result)
+            return 0
+        return emit(result)
     except EngineError as exc:
         return fail(exc.errors)
     except Exception as exc:  # never leave a traceback on stdout consumers
