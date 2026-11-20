@@ -1,6 +1,6 @@
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright 2026 Christian Gonzales Komiya -->
 ---
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Gonzales Komiya
 id: stella
 name: Stella
 role: "Orchestrator: sets the goal, picks the mode and roster, approves critical actions, may abort"

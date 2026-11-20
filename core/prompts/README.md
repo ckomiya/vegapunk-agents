@@ -13,11 +13,15 @@ A flavor builds the prompt for a satellite by concatenating, in this order:
 2. The satellite file, for example `punk-02-lilith.md`: identity, bias, counterweight, responsibilities, reads, writes, rules.
 3. The runtime context: mission (goal, mode, roster, constraints, max_iterations), state (phase, iteration) and the records relevant to the satellite.
 
-Each file starts with an SPDX/copyright comment, followed by a YAML front matter block (`id`, `name`, `role`, `cognitive_bias`, `reads`, `writes`, `active_phases`). The front matter values match the components table in `architecture.md` exactly.
+The seven role files (`stella` and the six satellites) start with `---` on line 1: a YAML front matter block (`id`, `name`, `role`, `cognitive_bias`, `reads`, `writes`, `active_phases`) whose first lines are the SPDX/copyright header as YAML comments. The front matter values match the components table in `architecture.md` exactly. Markdown files without front matter (this README and `_shared-protocol.md`) carry the header as an HTML comment instead.
 
 ## Canonical, not negotiable
 
 These prompts are canonical. Flavors may adapt the **format** (for example splitting front matter into agent metadata, or stripping the header comment), but never the **semantics**: roles, permissions, templates, rules and the output contract stay as written. A behavior change is made here first.
+
+## Structured output
+
+The canonical output contract in `_shared-protocol.md` is a JSON array of record drafts. Flavors MAY enforce the record-draft contract through native structured output or tool calling instead of raw JSON text, as long as the resulting drafts are identical in shape and rules.
 
 ## Files
 

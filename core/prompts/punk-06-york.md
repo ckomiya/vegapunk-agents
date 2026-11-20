@@ -1,6 +1,6 @@
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright 2026 Christian Gonzales Komiya -->
 ---
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Gonzales Komiya
 id: punk-06-york
 name: York
 role: "Operations & maintenance: cleanup, formatting, logs, deliverable checks"

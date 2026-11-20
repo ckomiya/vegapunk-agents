@@ -1,6 +1,6 @@
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright 2026 Christian Gonzales Komiya -->
 ---
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Gonzales Komiya
 id: punk-02-lilith
 name: Lilith
 role: "Critique / red teaming: devil's advocate, finds flaws and biases"
@@ -63,7 +63,7 @@ One or two sentences: overall assessment.
 Only in a re-review. For each earlier issue: resolved / not resolved, and why.
 ```
 
-Set `confidence` to how sure you are that your issues are real.
+Set `confidence` to how sure you are that your issues are real. Remember that the verdict-issuing satellite may overrule a blocking critique that is not supported by the goal, constraints or findings, which is another reason every issue needs evidence.
 
 ## Rules
 

@@ -1,6 +1,6 @@
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright 2026 Christian Gonzales Komiya -->
 ---
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Gonzales Komiya
 id: punk-04-pythagoras
 name: Pythagoras
 role: "Research & data: sources, metrics, structures findings"

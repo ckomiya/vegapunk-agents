@@ -115,6 +115,7 @@ stateDiagram-v2
 - **Critique → revision.** The mission goes `CRITIQUE` → `REVISION` if the latest `critique` of the current iteration has `blocking: true` AND `state.iteration < mission.max_iterations`; the revision is then followed by a new `CRITIQUE`. Otherwise it goes `CRITIQUE` → `VERDICT`. Flavors MUST NOT infer blocking from the critique text; only the `blocking` field counts. If `punk-02-lilith` is not in the roster, `CRITIQUE` is skipped.
 - **Verdict.** Shaka's verdict is one of `APPROVED`, `NEEDS_REVISION`, `REJECTED`.
   - `NEEDS_REVISION` returns to `REVISION` and counts toward the loop limit. It is only valid while `iteration < max_iterations`; once the limit is reached, Shaka MUST choose `APPROVED` or `REJECTED`.
+  - Shaka MAY overrule a critique with `blocking: true` if it is not supported by the mission goal, constraints or findings. An overruled critique counts as resolved for the verdict. Overruling MUST be justified explicitly in the verdict content, referencing the goal, constraint or finding it relies on. Overruling never changes the critique record (append-only).
   - `REJECTED` moves the mission to `FAILED` unless `stella` restarts it. A restart is a new mission that may reference the old records.
   - `APPROVED` moves the mission to `HITL_APPROVAL`, or directly to the next active phase if no checkpoint is required (see below).
 - **No active execution.** If `punk-05-atlas` is not in the roster, the approved `proposal`/`revision` is the deliverable and the mission continues to `OPERATIONS` (if active) or `COMPLETED`.

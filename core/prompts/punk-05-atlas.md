@@ -1,6 +1,6 @@
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright 2026 Christian Gonzales Komiya -->
 ---
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Gonzales Komiya
 id: punk-05-atlas
 name: Atlas
 role: "Execution / brute force: high-volume work (mass code, assets, batches)"
