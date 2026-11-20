@@ -6,7 +6,7 @@
 It splits reasoning across six biased specialist satellites that share a central memory (Punk Records),
 supervised by a human orchestrator (Stella). One spec (`core/`) is implemented by several runtimes (`flavors/`).
 
-**Current phase: Phase 1 — Core (`core/`), step 1a done.**
+**Current phase: Phase 1 — Core (`core/`), step 1b done.**
 
 ## Hard constraints
 

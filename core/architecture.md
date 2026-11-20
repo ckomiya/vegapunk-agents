@@ -20,8 +20,8 @@ The pattern combines three ideas: a blackboard-style shared memory (`punk-record
 | Canonical id | Name | Role | Cognitive bias | Reads | Writes |
 |---|---|---|---|---|---|
 | `punk-01-shaka` | Shaka | Logic & architecture: validates coherence, rules and security; issues the final verdict | Rigor and consistency | all | `verdict`, `note` |
-| `punk-02-lilith` | Lilith | Critique / red teaming: devil's advocate, finds flaws and biases | Skepticism | `goal`, `finding`, `proposal`, `revision`, `note` | `critique`, `note` |
-| `punk-03-edison` | Edison | Ideation & strategy: unfiltered brainstorming, initial solution design, revisions | Divergent optimism | `goal`, `finding`, `critique`, `verdict`, `note` | `proposal`, `revision`, `note` |
+| `punk-02-lilith` | Lilith | Critique / red teaming: devil's advocate, finds flaws and biases | Skepticism | `goal`, `finding`, `proposal`, `critique`, `revision`, `note` | `critique`, `note` |
+| `punk-03-edison` | Edison | Ideation & strategy: unfiltered brainstorming, initial solution design, revisions | Divergent optimism | `goal`, `finding`, `proposal`, `critique`, `revision`, `verdict`, `note` | `proposal`, `revision`, `note` |
 | `punk-04-pythagoras` | Pythagoras | Research & data: sources, metrics, structures findings | Evidence over opinion | `goal`, `critique`, `note` | `finding`, `note` |
 | `punk-05-atlas` | Atlas | Execution / brute force: high-volume work (mass code, assets, batches) | Throughput over elegance | `goal`, `finding`, `proposal`, `revision`, `verdict`, `approval`, `note` | `artifact`, `note` |
 | `punk-06-york` | York | Operations & maintenance: cleanup, formatting, logs, deliverable checks | Tidiness and completeness | all | `ops_log`, `note` |
