@@ -29,7 +29,7 @@ satellites:
   punk-04-pythagoras:
     model: sonnet
     color: cyan
-    maxTurns: 8
+    maxTurns: 12  # room for the per-mission search limit plus page fetches
     tools: [WebSearch, WebFetch, Read, Grep, Glob]
   punk-05-atlas:
     model: haiku

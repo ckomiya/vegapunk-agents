@@ -388,6 +388,106 @@ class InitTests(Base):
         self.assertEqual(doc["mission"]["constraints"], ["Be short"])
         self.assertEqual(doc["state"], {**doc["state"], "iteration": 0, "status": "active"})
 
+    def test_search_limit_defaults_to_3(self):
+        out = self.init("light")
+        engine = json.loads((self.dir / "engine.json").read_text(encoding="utf-8"))
+        self.assertEqual(engine["search_limit"], 3)
+        limits = {"web_searches": 3, "draft_words": 250}
+        self.assertEqual(out["next"]["context"]["runtime_limits"], limits)
+        code, ctx = self.run_cli("context")
+        self.assertEqual(code, 0, ctx)
+        self.assertEqual(ctx["runtime_limits"], limits)
+
+    def test_search_limit_reaches_context_and_next_context(self):
+        out = self.init("standard", "--search-limit", "6")
+        limits = {"web_searches": 6, "draft_words": 250}
+        self.assertEqual(out["next"]["context"]["runtime_limits"], limits)
+        code, ctx = self.run_cli("context")
+        self.assertEqual(code, 0, ctx)
+        self.assertEqual(ctx["runtime_limits"], limits)
+        nxt = self.append(draft("punk-04-pythagoras", "finding"))["next"]
+        self.assertEqual(nxt["context"]["runtime_limits"], limits)
+
+    def test_search_limit_zero_is_allowed(self):
+        out = self.init("light", "--search-limit", "0")
+        self.assertEqual(out["next"]["context"]["runtime_limits"]["web_searches"], 0)
+
+    def test_negative_search_limit_is_rejected(self):
+        code, out = self.run_cli("init", "--goal", "G", "--mode", "light",
+                                 "--mission-dir", str(self.dir), "--search-limit", "-1")
+        self.assertNotEqual(code, 0)
+        self.assertFalse(out["ok"])
+        self.assertFalse((self.dir / "punk-records.json").exists())
+
+    def test_mission_without_search_limit_uses_3(self):
+        self.init("light")
+        (self.dir / "engine.json").write_text('{"hitl_after_verdict": false}\n', encoding="utf-8")
+        code, ctx = self.run_cli("context")
+        self.assertEqual(code, 0, ctx)
+        self.assertEqual(ctx["runtime_limits"], {"web_searches": 3, "draft_words": 250})
+
+    def init_raw(self, *args):
+        return self.run_cli("init", "--mode", "light", "--mission-dir", str(self.dir), *args)
+
+    def test_goal_from_file_is_used_exactly(self):
+        text = "Line one\n\n  Indented line with \"quotes\" and accents: café\nLast line"
+        goal_file = Path(self._tmp.name) / "goal.txt"
+        goal_file.write_bytes((text + "\n").encode("utf-8"))
+        code, out = self.init_raw("--goal-file", str(goal_file))
+        self.assertEqual(code, 0, out)
+        doc = self.doc()
+        self.assertEqual(doc["mission"]["goal"], text)
+        self.assertTrue(doc["records"][0]["content"].startswith(f"## Outcome\n{text}\n\n## Constraints"))
+
+    def test_empty_goal_file_is_rejected(self):
+        goal_file = Path(self._tmp.name) / "goal.txt"
+        goal_file.write_text("  \n", encoding="utf-8")
+        code, out = self.init_raw("--goal-file", str(goal_file))
+        self.assertNotEqual(code, 0)
+        self.assertFalse(out["ok"])
+        self.assertFalse((self.dir / "punk-records.json").exists())
+
+    def test_goal_and_goal_file_together_are_rejected(self):
+        goal_file = Path(self._tmp.name) / "goal.txt"
+        goal_file.write_text("G", encoding="utf-8")
+        code, out = self.init_raw("--goal", "G", "--goal-file", str(goal_file))
+        self.assertNotEqual(code, 0)
+        self.assertFalse((self.dir / "punk-records.json").exists())
+
+    def test_no_goal_is_rejected(self):
+        code, out = self.init_raw()
+        self.assertNotEqual(code, 0)
+        self.assertFalse((self.dir / "punk-records.json").exists())
+
+    def test_draft_words_defaults_to_250(self):
+        out = self.init("light")
+        engine = json.loads((self.dir / "engine.json").read_text(encoding="utf-8"))
+        self.assertEqual(engine["draft_words"], 250)
+        self.assertEqual(out["next"]["context"]["runtime_limits"]["draft_words"], 250)
+
+    def test_draft_words_reaches_context_and_next_context(self):
+        out = self.init("standard", "--draft-words", "500")
+        self.assertEqual(out["next"]["context"]["runtime_limits"]["draft_words"], 500)
+        code, ctx = self.run_cli("context")
+        self.assertEqual(code, 0, ctx)
+        self.assertEqual(ctx["runtime_limits"]["draft_words"], 500)
+        nxt = self.append(draft("punk-04-pythagoras", "finding"))["next"]
+        self.assertEqual(nxt["context"]["runtime_limits"]["draft_words"], 500)
+
+    def test_invalid_draft_words_is_rejected(self):
+        for value in ("0", "-5"):
+            code, out = self.init_raw("--goal", "G", "--draft-words", value)
+            self.assertNotEqual(code, 0, value)
+            self.assertFalse(out["ok"])
+            self.assertFalse((self.dir / "punk-records.json").exists())
+
+    def test_mission_without_draft_words_uses_250(self):
+        self.init("light")
+        (self.dir / "engine.json").write_text('{"hitl_after_verdict": false}\n', encoding="utf-8")
+        code, ctx = self.run_cli("context")
+        self.assertEqual(code, 0, ctx)
+        self.assertEqual(ctx["runtime_limits"]["draft_words"], 250)
+
     def test_default_mission_dir_uses_mission_id(self):
         cwd = Path(self._tmp.name)
         proc = subprocess.run(

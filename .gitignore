@@ -29,3 +29,6 @@ Thumbs.db
 
 # Local mission folders
 .vegapunk/
+
+# Demo output (startup-validator)
+startup-validator-output/

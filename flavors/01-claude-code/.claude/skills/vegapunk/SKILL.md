@@ -30,16 +30,16 @@ Every command prints JSON. `next.action` in the last output tells you what to do
 
 The mission goal arrives in `$ARGUMENTS`. If it is empty, ask Stella for it.
 
-1. Help Stella write the outcome, the constraints and the done-criteria (each done-criterion must be checkable).
+1. Help Stella write the outcome, the constraints and the done-criteria (each done-criterion must be checkable). If Stella gives the outcome, constraints or done-criteria already written, use her words verbatim: do not summarize or rewrite them; only help with the parts she has not written.
 2. Suggest a mode and roster with reasons. Stella decides.
    - Light: punk-03-edison proposes, punk-01-shaka judges.
    - Standard: punk-04-pythagoras researches first, punk-03-edison proposes, punk-02-lilith critiques, punk-01-shaka judges.
    - Full: Standard plus punk-05-atlas executes the approved plan and punk-06-york checks the deliverables; human approval is mandatory before execution.
 
    The roster must include `punk-01-shaka`.
-3. Ask for `max_iterations` (default 2). Only if the roster does not include `punk-05-atlas`, ask whether she wants human approval after the verdict (`--hitl-after-verdict`). With Atlas, approval is always mandatory.
+3. Ask for `max_iterations` (default 2). If Stella gives a web search limit, pass it to `init` with `--search-limit`; if she gives a draft word limit, pass it with `--draft-words`. If she gives neither, do not ask (the defaults are 3 searches and 250 words). Only if the roster does not include `punk-05-atlas`, ask whether she wants human approval after the verdict (`--hitl-after-verdict`). With Atlas, approval is always mandatory.
 4. Show a summary and do NOT run `init` until Stella explicitly confirms.
-5. Then run `init` with `--goal`, `--constraint` (repeat), `--done-criterion` (repeat), `--mode`, `--roster` (only if changed), `--max-iterations` and `--hitl-after-verdict` as applicable. Tell Stella where the mission folder is.
+5. Pass the outcome to `init` through a file: write it with the Write tool to `<project>/.vegapunk/goal-<timestamp>.txt` (create `.vegapunk/` if missing) and use `--goal-file`, so long or multi-line goals arrive intact. Run `init` with `--goal-file`, `--constraint` (repeat), `--done-criterion` (repeat), `--mode`, `--roster` (only if changed), `--max-iterations`, `--search-limit` and `--draft-words` (only if Stella gave them) and `--hitl-after-verdict` as applicable. Tell Stella where the mission folder is.
 6. Keep `mission_dir` from the `init` output and pass it as `--mission-dir` in ALL later commands (`status`, `context`, `append`, `note`, `approve`, `abort`, `fail`, `show`, `report`).
 
 ## 3. Loop
@@ -53,10 +53,12 @@ b. Invoke with the Agent tool EXACTLY the subagent named in `next.actor`: never 
 
 ```
 Runtime limits:
-- Keep the content of each draft under about 250 words.
-- punk-04-pythagoras only: use at most 3 web searches.
+- Keep the content of each draft under about <draft_words> words.
+- punk-04-pythagoras only: use at most <web_searches> web searches.
 - Respond with only the JSON array of record drafts.
 ```
+
+Replace `<draft_words>` and `<web_searches>` with the values of `runtime_limits.draft_words` and `runtime_limits.web_searches` in the context.
 
 Add no opinions, summaries or instructions of your own.
 c. Save the subagent's reply with the Write tool exactly as received, without reformatting, to `<mission-dir>/drafts/<NN>-<actor>.json` (NN = two-digit counter), then run `append --draft-file <that file>`.

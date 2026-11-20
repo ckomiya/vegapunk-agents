@@ -65,6 +65,8 @@ PHASE_PRODUCES = {
     "OPERATIONS": "ops_log",
 }
 TERMINAL = {"COMPLETED", "FAILED", "ABORTED"}
+DEFAULT_SEARCH_LIMIT = 3
+DRAFT_WORDS = 250
 DRAFT_FIELDS = {"author", "type", "content", "refs", "confidence", "blocking", "verdict"}
 DRAFT_REQUIRED = {"author", "type", "content", "refs"}
 RUNTIME_FIELDS = {"id", "phase", "iteration", "created_at"}
@@ -172,6 +174,20 @@ class Mission:
         self.ts = now()
 
     # -- accessors -------------------------------------------------------
+    @property
+    def draft_words(self) -> int:
+        value = self.engine.get("draft_words", DRAFT_WORDS)
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            return DRAFT_WORDS
+        return value
+
+    @property
+    def search_limit(self) -> int:
+        value = self.engine.get("search_limit", DEFAULT_SEARCH_LIMIT)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            return DEFAULT_SEARCH_LIMIT
+        return value
+
     @property
     def roster(self) -> list[str]:
         return self.doc["mission"]["roster"]
@@ -370,10 +386,25 @@ def resolve_dir(args) -> Path:
 def cmd_init(args) -> dict:
     records_schema, event_schema, roles = load_runtime_files()
     errors = []
-    if not args.goal.strip():
-        errors.append("--goal must not be empty")
+    if args.goal_file is not None:
+        try:
+            goal = Path(args.goal_file).read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise EngineError(f"cannot read goal from {args.goal_file}: {exc}") from None
+        if goal.endswith("\r\n"):  # drop only the final line break of the file
+            goal = goal[:-2]
+        elif goal.endswith("\n"):
+            goal = goal[:-1]
+    else:
+        goal = args.goal
+    if not goal.strip():
+        errors.append("the goal must not be empty")
+    if args.draft_words <= 0:
+        errors.append("--draft-words must be > 0")
     if args.max_iterations < 0:
         errors.append("--max-iterations must be >= 0")
+    if args.search_limit < 0:
+        errors.append("--search-limit must be >= 0")
     roster = list(args.roster) if args.roster else list(DEFAULT_ROSTERS[args.mode])
     bad = [r for r in roster if r not in SATELLITES]
     if bad:
@@ -394,7 +425,7 @@ def cmd_init(args) -> dict:
         "schema_version": SCHEMA_VERSION,
         "mission": {
             "id": mission_id,
-            "goal": args.goal,
+            "goal": goal,
             "mode": args.mode,
             "roster": roster,
             "constraints": list(args.constraint or []),
@@ -407,6 +438,8 @@ def cmd_init(args) -> dict:
     engine = {
         "$comment": "Flavor-only settings, not part of the core specification.",
         "hitl_after_verdict": bool(args.hitl_after_verdict),
+        "search_limit": args.search_limit,
+        "draft_words": args.draft_words,
     }
     m = Mission(directory, doc, [], engine, roles)
     m.ts = ts
@@ -416,7 +449,7 @@ def cmd_init(args) -> dict:
     m.add_record(
         "stella",
         "goal",
-        f"## Outcome\n{args.goal}\n\n## Constraints\n{constraints}\n\n## Done-criteria\n{criteria}",
+        f"## Outcome\n{goal}\n\n## Constraints\n{constraints}\n\n## Done-criteria\n{criteria}",
         [],
         {},
     )
@@ -756,6 +789,7 @@ def build_context(m: Mission, satellite: str, full: bool, include: list[str]) ->
         "satellite": satellite,
         "mission": {k: mission[k] for k in ("goal", "mode", "roster", "constraints", "max_iterations")},
         "state": {"phase": m.phase, "iteration": m.iteration},
+        "runtime_limits": {"web_searches": m.search_limit, "draft_words": m.draft_words},
         "records": passed,
         "selection": {
             "mode": "full" if full else "selective",
@@ -779,13 +813,20 @@ def build_parser() -> argparse.ArgumentParser:
     sub = ap.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("init", parents=[common], help="create a mission")
-    p.add_argument("--goal", required=True)
+    goal_src = p.add_mutually_exclusive_group(required=True)
+    goal_src.add_argument("--goal")
+    goal_src.add_argument("--goal-file", metavar="FILE",
+                          help="file holding the goal text, used as given (final line break dropped)")
     p.add_argument("--constraint", action="append")
     p.add_argument("--done-criterion", action="append", metavar="TEXT")
     p.add_argument("--mode", required=True, choices=["light", "standard", "full"])
     p.add_argument("--roster", nargs="+", metavar="ID")
     p.add_argument("--max-iterations", type=int, default=2)
     p.add_argument("--hitl-after-verdict", action="store_true")
+    p.add_argument("--draft-words", type=int, default=DRAFT_WORDS, metavar="N",
+                   help="approximate max words per draft (default: 250)")
+    p.add_argument("--search-limit", type=int, default=DEFAULT_SEARCH_LIMIT, metavar="N",
+                   help="max web searches per satellite call (default: 3)")
     p.set_defaults(func=cmd_init)
 
     p = sub.add_parser("append", parents=[common], help="append satellite record drafts")

@@ -10,7 +10,7 @@ tools: WebSearch, WebFetch, Read, Grep, Glob
 disallowedTools: Agent
 model: sonnet
 color: cyan
-maxTurns: 8
+maxTurns: 12
 omitClaudeMd: true
 ---
 
