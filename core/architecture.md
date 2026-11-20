@@ -47,6 +47,7 @@ The pattern combines three ideas: a blackboard-style shared memory (`punk-record
 - Passed records MUST be complete and unaltered, in their original order. Selecting is allowed; summarizing or rewriting records is not.
 - Records not passed remain in `punk-records` unchanged (append-only).
 - If a satellite needs context it did not receive, it writes a `note` asking for it; the flavor SHOULD pass the requested records in the satellite's next activation.
+- A record MAY reference (`refs`) records of types the reading satellite cannot read (for example, Atlas reads the `verdict`, which cites a `critique`). Such references are NOT dangling: the satellite MUST NOT report them as broken or nonexistent, and MAY note that it cannot read them.
 
 ### Record types and write permissions
 
@@ -78,7 +79,7 @@ Each mode has a default roster. `stella` MAY override the roster, but every rost
 When `stella` should pick each mode:
 
 - **Light** — quick, low-stakes, reversible work where an idea plus a sanity check is enough. No research, no adversarial review.
-- **Standard** — the everyday default. The question needs facts, and the answer needs to survive an adversarial review, but nothing has to be mass-produced.
+- **Standard** — the question needs facts, and the answer needs to survive an adversarial review, but nothing has to be mass-produced.
 - **Full Egghead** — high-stakes, complex or irreversible work, or work that produces a large deliverable that must be built and then checked.
 
 ## Mission lifecycle
@@ -125,7 +126,7 @@ stateDiagram-v2
 - **Skipping.** A phase whose satellite is not in the roster is skipped; the mission moves to the next active phase in the order above. `DEFINED`, `VERDICT` and the terminal states are never skipped.
 - **Iteration counter.** `state.iteration` starts at 0 and is incremented each time the mission enters `REVISION`. Records carry the iteration in which they were written.
 - **Loop limit.** `mission.max_iterations` (default 2) caps the number of `REVISION` entries. A value of 0 forbids revisions.
-- **Critique → revision.** The mission goes `CRITIQUE` → `REVISION` if the latest `critique` of the current iteration has `blocking: true` AND `state.iteration < mission.max_iterations`; the revision is then followed by a new `CRITIQUE`. Otherwise it goes `CRITIQUE` → `VERDICT`. Flavors MUST NOT infer blocking from the critique text; only the `blocking` field counts. If `punk-02-lilith` is not in the roster, `CRITIQUE` is skipped.
+- **Critique → revision.** The mission goes `CRITIQUE` → `REVISION` if the latest `critique` of the current iteration has `blocking: true` AND `state.iteration < mission.max_iterations`; the revision is then followed by a new `CRITIQUE`. Otherwise it goes `CRITIQUE` → `VERDICT`. Flavors MUST NOT infer blocking from the critique text; only the `blocking` field counts. If `punk-02-lilith` is not in the roster, `CRITIQUE` is skipped. If a `critique` with `blocking: true` is written and the roster does not include `punk-03-edison` (so no `REVISION` is possible), `REVISION` is skipped and the mission goes to `VERDICT`; in that case Shaka MUST expressly address the blocking critique in the verdict, either by approving with a justification for overruling it, or by rejecting.
 - **Verdict.** Shaka's verdict is one of `APPROVED`, `NEEDS_REVISION`, `REJECTED`.
   - `NEEDS_REVISION` returns to `REVISION` and counts toward the loop limit. It is only valid while `iteration < max_iterations`; once the limit is reached, Shaka MUST choose `APPROVED` or `REJECTED`.
   - Shaka MAY overrule a critique with `blocking: true` if it is not supported by the mission goal, constraints or findings. An overruled critique counts as resolved for the verdict. Overruling MUST be justified explicitly in the verdict content, referencing the goal, constraint or finding it relies on. Overruling never changes the critique record (append-only).
@@ -140,7 +141,7 @@ stateDiagram-v2
 - **Optional after `VERDICT`.** In every other case `stella` MAY require `HITL_APPROVAL`; Light mode typically uses it as the only human gate. When not required, the phase is skipped.
 - **Declining.** At `HITL_APPROVAL`, `stella` either approves (writes an `approval` record) or aborts the mission. To change course instead, `stella` aborts and starts a new mission.
 - **Abort at any time.** `stella` can move the mission to `ABORTED` from any non-terminal state.
-- A flavor MUST emit `hitl_requested` when it enters the checkpoint and `hitl_resolved` when `stella` answers.
+- A flavor MUST emit `hitl_requested` when it enters the checkpoint and `hitl_resolved` when `stella` answers. `hitl_resolved` MUST be emitted before the `record_written` event of the `approval` record.
 
 ## Flavor compliance checklist
 
@@ -151,7 +152,7 @@ Every flavor MUST implement:
 - [ ] Shaka's verdict rules, including the forced `APPROVED`/`REJECTED` choice once the loop limit is reached.
 - [ ] `punk-records` as the only communication channel: no direct satellite-to-satellite messages.
 - [ ] Append-only records that validate against `schemas/punk-records.schema.json`, including the author → record-type permissions.
-- [ ] Event emission conforming to `schemas/event.schema.json`, as one JSON object per line (`events.jsonl`). At minimum: `mission_started`, `phase_changed`, `record_written`, `hitl_requested`, `hitl_resolved` and exactly one terminal event (`mission_completed`, `mission_failed` or `mission_aborted`). `satellite_activated` and `satellite_idle` SHOULD be emitted.
+- [ ] Event emission conforming to `schemas/event.schema.json`, as one JSON object per line (`events.jsonl`). At minimum: `mission_started`, `phase_changed`, `record_written`, `hitl_requested`, `hitl_resolved` and exactly one terminal event (`mission_completed`, `mission_failed` or `mission_aborted`). `satellite_activated` and `satellite_idle` SHOULD be emitted, and only for satellites, never for `stella`.
 - [ ] The human-in-the-loop gate before `EXECUTION`, and the ability for `stella` to abort at any state.
 - [ ] Canonical ids everywhere: `stella`, `punk-records`, `punk-01-shaka` … `punk-06-york`.
 - [ ] No dependency on, or knowledge of, any use case.

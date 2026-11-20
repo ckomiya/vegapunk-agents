@@ -35,8 +35,10 @@ A weak goal is vague ("improve this"). A strong goal can be judged by someone wh
 Follow [`architecture.md`](../architecture.md), section "Activation modes":
 
 - **Light (2):** quick, low-stakes, reversible work.
-- **Standard (4):** the everyday default; needs facts and an adversarial review.
+- **Standard (4):** needs facts and an adversarial review.
 - **Full Egghead (6):** high-stakes or complex work, or a large deliverable that must be built and checked.
+
+Choose the lightest mode that meets the goal. Move up to Standard if you need external data or adversarial critique; move up to full Egghead when the result must be executed (files, code) and verified.
 
 You may override the roster, but it must always include `punk-01-shaka`. Remember that adding `punk-05-atlas` makes the human approval gate mandatory.
 
