@@ -6,7 +6,7 @@
 It splits reasoning across six biased specialist satellites that share a central memory (Punk Records),
 supervised by a human orchestrator (Stella). One spec (`core/`) is implemented by several runtimes (`flavors/`).
 
-**Current phase: Phase 1 — Core (`core/`), step 1b done.**
+**Current phase: Phase 1 — Core (`core/`), steps 1a–1c done; pending final review.**
 
 ## Hard constraints
 
@@ -25,7 +25,7 @@ Use these exact names everywhere (kebab-case for files):
 
 ### HARD RULE — Attribution
 Never remove or alter `LICENSE`, `NOTICE`, the authorship in `CITATION.cff`, or the README's final "Authorship, Citation & Inspiration Note" section. That section must always remain the LAST section of `README.md`.
-New source files start with `SPDX-License-Identifier: Apache-2.0` and `Copyright 2026 Christian Gonzales Komiya`, in the appropriate comment syntax.
+New source files start with `SPDX-License-Identifier: Apache-2.0` and `Copyright 2026 Christian Gonzales Komiya`, in the appropriate comment syntax. Markdown files with YAML front matter carry the header as YAML comments inside the front matter, so the file starts with `---` on line 1. Other Markdown files use an HTML comment.
 
 ### HARD RULE — No official One Piece assets
 No official One Piece artwork, logos, or copyrighted assets anywhere in the repo.
@@ -40,5 +40,6 @@ All code, comments, and docs are in English.
 - Do not add dependencies without stating them explicitly.
 - Each flavor folder must be self-contained, with its own README and dependency file (added in its phase).
 - Commits carry no AI co-author trailers; the author is the sole author.
+- Run `python core/tools/validate_core.py` after any change in `core/`. Its dev/CI-only dependencies are listed in `core/tools/requirements.txt` (`jsonschema`, `pyyaml`, `rfc3339-validator`).
 - Versioning: when bumping versions, update `version` in `CITATION.cff` and the README BibTeX block together.
 - Line endings: the repo uses LF (enforced by `.gitattributes`); the author works on Windows, so never commit CRLF.

@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Gonzales Komiya
+# Dev/CI-only dependencies of validate_core.py (not needed to use the pattern).
+jsonschema>=4,<5
+pyyaml>=6,<7
+rfc3339-validator>=0.1,<0.2
