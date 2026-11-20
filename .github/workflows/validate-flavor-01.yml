@@ -29,3 +29,5 @@ jobs:
         run: pip install -r flavors/01-claude-code/requirements.txt
       - name: Check generated agents are up to date
         run: python flavors/01-claude-code/tools/generate_agents.py --check
+      - name: Run Punk Records tests
+        run: python -m unittest discover -s flavors/01-claude-code/tests -v
