@@ -1,4 +1,3 @@
-# The doi will be added after Zenodo archives the v0.1.0 release.
 cff-version: 1.2.0
 message: "If you use this pattern or software, please cite it using the metadata below."
 type: software
@@ -16,6 +15,14 @@ authors:
     email: "christian.komiya@gmail.com"
 repository-code: "https://github.com/ckomiya/vegapunk-agents"
 license: Apache-2.0
+doi: 10.5281/zenodo.24384581
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.24384581
+    description: "Concept DOI (all versions)"
+  - type: doi
+    value: 10.5281/zenodo.24384582
+    description: "Version DOI (v0.1.0)"
 version: 0.1.0
 date-released: 2026-11-19
 keywords:

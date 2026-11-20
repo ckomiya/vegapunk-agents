@@ -3,6 +3,7 @@
 > A **Multi-Agent Architecture Pattern (and Conceptual Framework)**: split hard reasoning across biased specialists that share one memory.
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24384581.svg)](https://doi.org/10.5281/zenodo.24384581)
 [![Cite this repository](https://img.shields.io/badge/Cite-this%20repository-informational.svg)](CITATION.cff)
 ![Status: work in progress](https://img.shields.io/badge/status-work%20in%20progress-orange.svg)
 
@@ -126,7 +127,7 @@ Created and maintained by Christian Gonzales Komiya ([@ckomiya](https://github.c
 
 ### Citation
 
-See [CITATION.cff](CITATION.cff), or use GitHub's "Cite this repository" button. A Zenodo DOI will be added at the first release.
+See [CITATION.cff](CITATION.cff), or use GitHub's "Cite this repository" button. The DOI below is the Zenodo concept DOI, which always resolves to the latest version; each release also has its own version DOI (see the release page on Zenodo).
 
 ```bibtex
 @software{gonzaleskomiya2026vegapunk,
@@ -134,11 +135,12 @@ See [CITATION.cff](CITATION.cff), or use GitHub's "Cite this repository" button.
   title   = {vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)},
   year    = {2026},
   version = {0.1.0},
+  doi     = {10.5281/zenodo.24384581},
   url     = {https://github.com/ckomiya/vegapunk-agents}
 }
 ```
 
-APA: Gonzales Komiya, C. (2026). *vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)* (Version 0.1.0) [Computer software]. https://github.com/ckomiya/vegapunk-agents
+APA: Gonzales Komiya, C. (2026). *vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)* (Version 0.1.0) [Computer software]. https://doi.org/10.5281/zenodo.24384581
 
 ### Inspiration note
 

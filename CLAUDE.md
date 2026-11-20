@@ -41,5 +41,6 @@ All code, comments, and docs are in English.
 - Each flavor folder must be self-contained, with its own README and dependency file (added in its phase).
 - Commits carry no AI co-author trailers; the author is the sole author.
 - Run `python core/tools/validate_core.py` after any change in `core/`. Its dev/CI-only dependencies are listed in `core/tools/requirements.txt` (`jsonschema`, `pyyaml`, `rfc3339-validator`).
-- Versioning: when bumping versions, update `version` in `CITATION.cff` and the README BibTeX block together.
+- Versioning: when bumping versions, update `version` in `CITATION.cff` and the README BibTeX block together. Each GitHub release gets a version DOI from Zenodo automatically; `CITATION.cff` and the README keep the concept DOI. Never mark releases as pre-release (Zenodo ignores them).
+- Run all validations BEFORE committing; if any step fails, stop and report — never chain commit/push after an unverified step.
 - Line endings: the repo uses LF (enforced by `.gitattributes`); the author works on Windows, so never commit CRLF.
