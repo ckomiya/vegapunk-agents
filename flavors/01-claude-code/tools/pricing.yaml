@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Gonzales Komiya
+#
+# Model prices used by tools/measure_mission.py. Prices never live in code.
+#
+# Verified: 2026-11-20
+# Source:   platform.claude.com pricing page
+# WARNING:  prices change. Re-verify them against the source above BEFORE
+#           publishing any cost figure derived from this file.
+#
+# Unit: USD per million tokens.
+# A model that is missing from this file gets empty costs and a warning
+# (its tokens are still counted).
+unit: usd_per_million_tokens
+
+models:
+  claude-sonnet-5-5:
+    input: 2.00
+    output: 10.00
+    cache_read: 0.10
+    cache_write_5m: 2.50
+    cache_write_1h: 4.00
+
+  # Two tiers, chosen per request by the prompt size
+  # (input + cache_read + cache_write tokens of that request).
+  claude-haiku-5-5:
+    up_to_100k:
+      input: 0.10
+      output: 0.50
+      cache_read: 0.01
+      cache_write_5m: 0.125
+      cache_write_1h: 0.20
+    over_100k:
+      input: 0.50
+      output: 2.50
+      cache_read: 0.05
+      cache_write_5m: 0.625
+      cache_write_1h: 1.00
