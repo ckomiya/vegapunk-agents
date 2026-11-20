@@ -1,4 +1,4 @@
-# doi and date-released will be added at the first Zenodo release.
+# The doi will be added after Zenodo archives the v0.1.0 release.
 cff-version: 1.2.0
 message: "If you use this pattern or software, please cite it using the metadata below."
 type: software
@@ -17,6 +17,7 @@ authors:
 repository-code: "https://github.com/ckomiya/vegapunk-agents"
 license: Apache-2.0
 version: 0.1.0
+date-released: 2026-11-19
 keywords:
   - multi-agent systems
   - agent architecture
