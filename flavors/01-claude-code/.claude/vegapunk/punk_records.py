@@ -589,6 +589,69 @@ def cmd_status(args) -> dict:
     }
 
 
+def select_context(m: Mission, satellite: str, full: bool, include: list[str]) -> tuple[list[dict], int]:
+    """Pick the records to pass to the active satellite (read-only).
+
+    Returns (records in original order, number of readable records).
+    """
+    records = m.doc["records"]
+    by_id = {r["id"]: r for r in records}
+    reads = set(m.roles[satellite]["reads"])
+    readable = {r["id"] for r in records if r["type"] in reads}
+
+    errors = []
+    for rid in include:
+        if rid not in by_id:
+            errors.append(f"--include {rid!r} does not exist")
+        elif rid not in readable:
+            errors.append(f"--include {rid!r} has type {by_id[rid]['type']!r}, which {satellite} may not read")
+    if errors:
+        raise EngineError(errors)
+
+    if full:
+        chosen = set(readable)
+    else:
+        floor = m.iteration - 1  # current and previous iteration
+        chosen = set(include)
+        for r in records:
+            if r["id"] not in readable:
+                continue
+            if (
+                r["type"] in ("goal", "finding")
+                or r["iteration"] >= floor
+                or (satellite == "punk-01-shaka" and r["type"] == "critique" and r.get("blocking") is True)
+            ):
+                chosen.add(r["id"])
+        for rid in list(chosen):  # one level of refs, from the records chosen above
+            chosen.update(ref for ref in by_id[rid]["refs"] if ref in readable)
+    return [r for r in records if r["id"] in chosen], len(readable)
+
+
+def cmd_context(args) -> dict:
+    m, _, _ = load_mission(resolve_dir(args))
+    satellite = m.actor_for(m.phase)
+    if m.doc["state"]["status"] != "active" or satellite is None:
+        raise EngineError(
+            f"context is only valid while a satellite is active (current phase: {m.phase}, "
+            f"status: {m.doc['state']['status']})"
+        )
+    passed, readable = select_context(m, satellite, args.full, args.include or [])
+    mission = m.doc["mission"]
+    return {
+        "ok": True,
+        "satellite": satellite,
+        "mission": {k: mission[k] for k in ("goal", "mode", "roster", "constraints", "max_iterations")},
+        "state": {"phase": m.phase, "iteration": m.iteration},
+        "records": passed,
+        "selection": {
+            "mode": "full" if args.full else "selective",
+            "records_passed": len(passed),
+            "records_readable": readable,
+            "content_chars": sum(len(r["content"]) for r in passed),
+        },
+    }
+
+
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
@@ -628,6 +691,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("status", parents=[common], help="show phase, roster, next actor and records")
     p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser("context", parents=[common], help="print the context for the active satellite (read-only)")
+    p.add_argument("--full", action="store_true", help="pass every record the satellite may read")
+    p.add_argument("--include", nargs="+", action="extend", metavar="ID",
+                   help="also pass these records (e.g. to answer a note asking for context)")
+    p.set_defaults(func=cmd_context)
     return ap
 
 

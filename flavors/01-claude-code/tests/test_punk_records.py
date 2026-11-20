@@ -379,5 +379,174 @@ class InitTests(Base):
         self.assertTrue((cwd / ".vegapunk" / "missions" / "m-1" / "punk-records.json").is_file())
 
 
+class ContextTests(Base):
+    def context(self, *args):
+        code, out = self.run_cli("context", *args)
+        self.assertEqual(code, 0, out)
+        return out
+
+    def ids(self, out):
+        return [r["id"] for r in out["records"]]
+
+    def write_mission(self, phase, iteration, records, roster=None):
+        """Hand-write a mission folder (for scenarios the real cycle cannot reach)."""
+        ts = "2026-01-01T00:00:00Z"
+        full = []
+        for i, (author, rtype, rphase, riter, refs, extra) in enumerate(records, 1):
+            rec = {"id": f"r-{i:03d}", "author": author, "type": rtype, "phase": rphase,
+                   "iteration": riter, "content": f"{rtype} {i}", "refs": refs, **extra, "created_at": ts}
+            full.append(rec)
+        doc = {
+            "schema_version": "0.1.0",
+            "mission": {"id": "m-hand", "goal": "G", "mode": "standard", "constraints": [],
+                        "roster": roster or ["punk-04-pythagoras", "punk-03-edison", "punk-02-lilith", "punk-01-shaka"],
+                        "max_iterations": 2, "created_at": ts},
+            "state": {"phase": phase, "iteration": iteration, "status": "active", "updated_at": ts},
+            "records": full,
+        }
+        self.assertEqual([], [e.message for e in RECORDS_VALIDATOR.iter_errors(doc)])
+        self.dir.mkdir(parents=True)
+        (self.dir / "punk-records.json").write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+        (self.dir / "events.jsonl").write_text("", encoding="utf-8")
+        (self.dir / "engine.json").write_text('{"hitl_after_verdict": false}\n', encoding="utf-8")
+
+    def loop_to_revision_2(self):
+        """Standard mission stopped at REVISION, iteration 2. Record ids:
+        r-001 goal, r-002 finding, r-003/r-004 notes (it 0), r-005 proposal, r-006 blocking critique (it 0),
+        r-007 revision (it 1, cites r-004), r-008 blocking critique (it 1)."""
+        self.init("standard")
+        self.append(draft("punk-04-pythagoras", "finding", refs=["r-001"]),
+                    draft("punk-04-pythagoras", "note", "Uncited."),
+                    draft("punk-04-pythagoras", "note", "Cited later."))
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-02-lilith", "critique", blocking=True))
+        self.append(draft("punk-03-edison", "revision", refs=["r-004"]))
+        self.append(draft("punk-02-lilith", "critique", blocking=True))
+        self.assertEqual(self.doc()["state"]["iteration"], 2)
+
+    def test_1_pythagoras_never_receives_unreadable_types(self):
+        self.write_mission("RESEARCH", 0, [
+            ("stella", "goal", "DEFINED", 0, [], {}),
+            ("punk-03-edison", "proposal", "IDEATION", 0, ["r-001"], {}),
+            ("punk-02-lilith", "critique", "CRITIQUE", 0, ["r-002"], {"blocking": False}),
+            ("punk-02-lilith", "note", "CRITIQUE", 0, [], {}),
+        ])
+        out = self.context()
+        self.assertEqual(out["satellite"], "punk-04-pythagoras")
+        self.assertEqual(self.ids(out), ["r-001", "r-003", "r-004"])
+        self.assertNotIn("proposal", {r["type"] for r in out["records"]})
+        self.assertEqual(out["selection"], {"mode": "selective", "records_passed": 3, "records_readable": 3,
+                                            "content_chars": sum(len(r["content"]) for r in out["records"])})
+        self.assertEqual(out["mission"], {"goal": "G", "mode": "standard", "constraints": [],
+                                          "roster": ["punk-04-pythagoras", "punk-03-edison", "punk-02-lilith", "punk-01-shaka"],
+                                          "max_iterations": 2})
+        self.assertEqual(out["state"], {"phase": "RESEARCH", "iteration": 0})
+
+    def test_2_edison_in_revision_selects_recent_iterations_and_refs(self):
+        self.loop_to_revision_2()
+        out = self.context()
+        self.assertEqual(out["satellite"], "punk-03-edison")
+        # r-003 (uncited it-0 note), r-005 (proposal it 0) and r-006 (critique it 0) are left out;
+        # r-004 (it 0) comes in through the ref of r-007.
+        self.assertEqual(self.ids(out), ["r-001", "r-002", "r-004", "r-007", "r-008"])
+        self.assertEqual(out["selection"]["records_readable"], 8)
+
+    def test_3_shaka_receives_old_blocking_critiques(self):
+        self.loop_to_revision_2()
+        self.append(draft("punk-03-edison", "revision"))
+        self.append(draft("punk-02-lilith", "critique", blocking=True))
+        out = self.context()
+        self.assertEqual(out["satellite"], "punk-01-shaka")
+        self.assertEqual(out["state"], {"phase": "VERDICT", "iteration": 2})
+        self.assertIn("r-006", self.ids(out))  # blocking critique of iteration 0, cited by no one
+        self.assertNotIn("r-003", self.ids(out))
+
+    def test_4_records_are_unaltered_and_in_original_order(self):
+        self.loop_to_revision_2()
+        by_id = {r["id"]: r for r in self.doc()["records"]}
+        for args in ((), ("--full",), ("--include", "r-003")):
+            out = self.context(*args)
+            self.assertEqual(self.ids(out), sorted(self.ids(out)))
+            for rec in out["records"]:
+                self.assertEqual(rec, by_id[rec["id"]])
+
+    def test_5_full_returns_every_readable_record(self):
+        self.loop_to_revision_2()
+        selective, full = self.context(), self.context("--full")
+        self.assertEqual(full["selection"]["mode"], "full")
+        self.assertEqual(self.ids(full), [f"r-{i:03d}" for i in range(1, 9)])
+        self.assertLessEqual(selective["selection"]["records_passed"], full["selection"]["records_passed"])
+        self.assertLess(selective["selection"]["content_chars"], full["selection"]["content_chars"])
+
+    def test_5b_full_still_filters_by_type(self):
+        self.write_mission("RESEARCH", 0, [
+            ("stella", "goal", "DEFINED", 0, [], {}),
+            ("punk-03-edison", "proposal", "IDEATION", 0, [], {}),
+        ])
+        self.assertEqual(self.ids(self.context("--full")), ["r-001"])
+
+    def test_6_include_adds_old_readable_record(self):
+        self.loop_to_revision_2()
+        out = self.context("--include", "r-003")
+        self.assertIn("r-003", self.ids(out))
+        self.assertEqual(out["selection"]["records_passed"], self.context()["selection"]["records_passed"] + 1)
+        out = self.context("--include", "r-003", "--include", "r-005")  # repeated flags accumulate
+        self.assertTrue({"r-003", "r-005"} <= set(self.ids(out)))
+
+    def test_6b_include_also_passes_readable_refs_of_the_included_record(self):
+        self.write_mission("REVISION", 2, [
+            ("stella", "goal", "DEFINED", 0, [], {}),
+            ("punk-04-pythagoras", "note", "RESEARCH", 0, [], {}),
+            ("punk-04-pythagoras", "note", "RESEARCH", 0, ["r-002"], {}),
+            ("punk-04-pythagoras", "note", "RESEARCH", 0, [], {}),
+        ])
+        self.assertEqual(self.ids(self.context()), ["r-001"])
+        self.assertEqual(self.ids(self.context("--include", "r-003")), ["r-001", "r-002", "r-003"])
+
+    def test_6c_include_rejects_missing_or_unreadable_ids(self):
+        self.write_mission("RESEARCH", 0, [
+            ("stella", "goal", "DEFINED", 0, [], {}),
+            ("punk-03-edison", "proposal", "IDEATION", 0, [], {}),
+        ])
+        for bad in ("r-099", "r-002"):  # nonexistent / proposal, unreadable for pythagoras
+            code, out = self.run_cli("context", "--include", bad)
+            self.assertNotEqual(code, 0)
+            self.assertFalse(out["ok"])
+            self.assertNotIn("records", out)
+            self.assertTrue(any(bad in e for e in out["errors"]))
+        code, out = self.run_cli("context", "--include", "r-001", "r-099")
+        self.assertNotEqual(code, 0)
+        self.assertNotIn("records", out)
+
+    def test_7_context_requires_an_active_satellite(self):
+        self.init("light", "--hitl-after-verdict")
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        code, out = self.run_cli("context")
+        self.assertNotEqual((code, out["ok"]), (0, True))
+        self.assertTrue(out["errors"])
+        self.run_cli("approve")
+        self.assertEqual(self.doc()["state"]["phase"], "COMPLETED")
+        self.assertNotEqual(self.run_cli("context")[0], 0)
+        self.run_cli("init", "--goal", "G", "--mode", "light", "--mission-dir", str(self.dir.parent / "m2"))
+        aborted = self.dir.parent / "m2"
+        proc = subprocess.run([sys.executable, str(SCRIPT), "abort", "--reason", "x", "--mission-dir", str(aborted)],
+                              capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        proc = subprocess.run([sys.executable, str(SCRIPT), "context", "--mission-dir", str(aborted)],
+                              capture_output=True, text=True, encoding="utf-8")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertFalse(json.loads(proc.stdout)["ok"])
+
+    def test_8_context_is_read_only(self):
+        self.loop_to_revision_2()
+        before = self.snapshot()
+        self.context()
+        self.context("--full")
+        self.context("--include", "r-003")
+        self.run_cli("context", "--include", "r-099")
+        self.assertEqual(self.snapshot(), before)
+
+
 if __name__ == "__main__":
     unittest.main()
