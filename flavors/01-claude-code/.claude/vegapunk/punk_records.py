@@ -406,7 +406,14 @@ def cmd_init(args) -> dict:
     m.ts = ts
     m.add_event("mission_started", "stella", {"mode": args.mode, "roster": roster})
     constraints = "\n".join(f"- {c}" for c in doc["mission"]["constraints"]) or "None."
-    m.add_record("stella", "goal", f"## Outcome\n{args.goal}\n\n## Constraints\n{constraints}", [], {})
+    criteria = "\n".join(f"- {c}" for c in (args.done_criterion or [])) or "None."
+    m.add_record(
+        "stella",
+        "goal",
+        f"## Outcome\n{args.goal}\n\n## Constraints\n{constraints}\n\n## Done-criteria\n{criteria}",
+        [],
+        {},
+    )
     m.go(m.next_linear("DEFINED"))
     commit(m, records_schema, event_schema, {directory / ENGINE_FILE: dump_json(engine)})
     return {"ok": True, "mission_id": mission_id, "mission_dir": str(directory), "next": m.next_info()}
@@ -589,6 +596,15 @@ def cmd_status(args) -> dict:
     }
 
 
+def cmd_show(args) -> dict:
+    m, _, _ = load_mission(resolve_dir(args))
+    by_id = {r["id"]: r for r in m.doc["records"]}
+    missing = [rid for rid in args.ids if rid not in by_id]
+    if missing:
+        raise EngineError([f"record {rid!r} does not exist" for rid in missing])
+    return {"ok": True, "records": [by_id[rid] for rid in args.ids]}
+
+
 def select_context(m: Mission, satellite: str, full: bool, include: list[str]) -> tuple[list[dict], int]:
     """Pick the records to pass to the active satellite (read-only).
 
@@ -667,6 +683,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("init", parents=[common], help="create a mission")
     p.add_argument("--goal", required=True)
     p.add_argument("--constraint", action="append")
+    p.add_argument("--done-criterion", action="append", metavar="TEXT")
     p.add_argument("--mode", required=True, choices=["light", "standard", "full"])
     p.add_argument("--roster", nargs="+", metavar="ID")
     p.add_argument("--max-iterations", type=int, default=2)
@@ -697,6 +714,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--include", nargs="+", action="extend", metavar="ID",
                    help="also pass these records (e.g. to answer a note asking for context)")
     p.set_defaults(func=cmd_context)
+
+    p = sub.add_parser("show", parents=[common], help="print full records by id, in the order requested (read-only)")
+    p.add_argument("ids", nargs="+", metavar="ID")
+    p.set_defaults(func=cmd_show)
     return ap
 
 

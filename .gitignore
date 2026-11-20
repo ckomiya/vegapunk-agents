@@ -26,3 +26,6 @@ Thumbs.db
 # Runtime outputs
 **/runs/**/*.jsonl
 **/outputs/**/*.jsonl
+
+# Local mission folders
+.vegapunk/

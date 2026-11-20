@@ -117,6 +117,21 @@ class LifecycleTests(Base):
         self.assertEqual((goal["id"], goal["author"], goal["type"]), ("r-001", "stella", "goal"))
         self.assertIn("## Outcome", goal["content"])
         self.assertIn("## Constraints", goal["content"])
+        self.assertIn("## Done-criteria\nNone.", goal["content"])
+
+    def test_init_goal_has_three_sections(self):
+        code, out = self.run_cli(
+            "init", "--goal", "Pick a name", "--constraint", "One page", "--constraint", "No tooling",
+            "--done-criterion", "Covers every item", "--done-criterion", "Readable once",
+            "--mode", "light", "--mission-dir", str(self.dir),
+        )
+        self.assertEqual(code, 0, out)
+        doc, _ = self.assert_valid()
+        self.assertEqual(
+            doc["records"][0]["content"],
+            "## Outcome\nPick a name\n\n## Constraints\n- One page\n- No tooling\n\n"
+            "## Done-criteria\n- Covers every item\n- Readable once",
+        )
 
     def test_2_light_with_hitl_after_verdict(self):
         self.init("light", "--hitl-after-verdict")
@@ -545,6 +560,38 @@ class ContextTests(Base):
         self.context("--full")
         self.context("--include", "r-003")
         self.run_cli("context", "--include", "r-099")
+        self.assertEqual(self.snapshot(), before)
+
+
+class ShowTests(Base):
+    def setUp(self):
+        super().setUp()
+        self.init("light", "--hitl-after-verdict")
+        self.append(draft("punk-03-edison", "proposal", content="Plan A.", refs=["r-001"]))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED", refs=["r-002"]))
+
+    def test_returns_records_identical_to_stored_in_requested_order(self):
+        stored = {r["id"]: r for r in self.doc()["records"]}
+        code, out = self.run_cli("show", "r-003", "r-001")
+        self.assertEqual(code, 0, out)
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["records"], [stored["r-003"], stored["r-001"]])
+
+    def test_unknown_id_is_an_error_without_partial_output(self):
+        code, out = self.run_cli("show", "r-001", "r-099")
+        self.assertNotEqual(code, 0)
+        self.assertFalse(out["ok"])
+        self.assertNotIn("records", out)
+        self.assertTrue(out["errors"])
+
+    def test_works_after_completed_and_does_not_modify_files(self):
+        self.run_cli("approve")
+        self.assertEqual(self.doc()["state"]["phase"], "COMPLETED")
+        before = self.snapshot()
+        code, out = self.run_cli("show", "r-002")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["records"][0]["id"], "r-002")
+        self.run_cli("show", "r-099")
         self.assertEqual(self.snapshot(), before)
 
 
