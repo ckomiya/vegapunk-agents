@@ -1,0 +1,28 @@
+# doi and date-released will be added at the first Zenodo release.
+cff-version: 1.2.0
+message: "If you use this pattern or software, please cite it using the metadata below."
+type: software
+title: "vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)"
+abstract: >-
+  vegapunk-agents is a multi-agent architecture pattern in which a human
+  orchestrator (Stella) coordinates six cognitively-biased specialist
+  satellites that read from and write to a shared memory (Punk Records).
+  Work is run in one of three activation modes using 2, 4 or 6 satellites.
+  The framework is fully decoupled from the use cases built on top of it.
+authors:
+  - given-names: "Christian"
+    family-names: "Gonzales Komiya"
+    alias: "ckomiya"
+    email: "christian.komiya@gmail.com"
+repository-code: "https://github.com/ckomiya/vegapunk-agents"
+license: Apache-2.0
+version: 0.1.0
+keywords:
+  - multi-agent systems
+  - agent architecture
+  - LLM agents
+  - architecture pattern
+  - orchestration
+  - shared memory
+  - red teaming
+  - human-in-the-loop

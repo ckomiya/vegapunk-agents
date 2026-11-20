@@ -1,8 +1,13 @@
 # vegapunk-agents
 
-> A cognitive meta-framework: split hard reasoning across biased specialists that share one memory.
+> A **Multi-Agent Architecture Pattern (and Conceptual Framework)**: split hard reasoning across biased specialists that share one memory.
+
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Cite this repository](https://img.shields.io/badge/Cite-this%20repository-informational.svg)](CITATION.cff)
 
 ## What is this?
+
+`vegapunk-agents` is, first and foremost, a **pattern**: a way of structuring multi-agent reasoning that is independent of any tool. Reference implementations ("flavors") come second and show how to apply it on specific runtimes.
 
 A single, general-purpose agent tends to be agreeable, shallow, and inconsistent: it brainstorms and judges in the same breath, so it does neither well. `vegapunk-agents` takes the opposite approach, inspired by Dr. Vegapunk from *One Piece*, whose mind is split into specialized satellites.
 
@@ -97,12 +102,34 @@ vegapunk-agents/
 
 ## Contributing
 
-Contributions are welcome once the core spec lands (Phase 1). Until then, feel free to open issues with ideas or feedback. Please read `CLAUDE.md` for the project's ground rules, especially the decoupling rule.
+Contributions are welcome once the core spec lands (Phase 1). Until then, feel free to open issues with ideas or feedback. Contributions are accepted under the Apache License 2.0. Please read `CLAUDE.md` for the project's ground rules, especially the decoupling rule.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-## Disclaimer
+## Authorship, Citation & Inspiration Note
 
-This is a fan-inspired project. It is not affiliated with or endorsed by Eiichiro Oda, Shueisha, or Toei Animation. *One Piece* names are used for thematic reference only.
+### Authorship
+
+Created and maintained by Christian Gonzales Komiya ([@ckomiya](https://github.com/ckomiya)), original author of the vegapunk-agents pattern. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+### Citation
+
+See [CITATION.cff](CITATION.cff), or use GitHub's "Cite this repository" button. A Zenodo DOI will be added at the first release.
+
+```bibtex
+@software{gonzaleskomiya2026vegapunk,
+  author  = {Gonzales Komiya, Christian},
+  title   = {vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)},
+  year    = {2026},
+  version = {0.1.0},
+  url     = {https://github.com/ckomiya/vegapunk-agents}
+}
+```
+
+APA: Gonzales Komiya, C. (2026). *vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)* (Version 0.1.0) [Computer software]. https://github.com/ckomiya/vegapunk-agents
+
+### Inspiration note
+
+Inspired by the character Dr. Vegapunk from *One Piece*, created by Eiichiro Oda / Shueisha. This project is not affiliated with or endorsed by Eiichiro Oda, Shueisha, or Toei Animation. Names are used for thematic reference only, with no intent of commercial infringement. This repository contains no official artwork or assets from the series.
