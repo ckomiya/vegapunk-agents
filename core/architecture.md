@@ -42,7 +42,7 @@ The pattern combines three ideas: a blackboard-style shared memory (`punk-record
 | `goal` | The mission goal and constraints | `stella` |
 | `finding` | Sourced fact, metric or structured research result | `punk-04-pythagoras` |
 | `proposal` | Initial solution or strategy | `punk-03-edison` |
-| `critique` | Flaws, risks, biases found in a proposal or revision | `punk-02-lilith` |
+| `critique` | Flaws, risks, biases found in a proposal or revision. MUST carry `blocking: true\|false` | `punk-02-lilith` |
 | `revision` | Revised proposal addressing critiques or a verdict | `punk-03-edison` |
 | `verdict` | Final judgement: `APPROVED`, `NEEDS_REVISION` or `REJECTED` | `punk-01-shaka` |
 | `approval` | Human approval of a critical action | `stella` |
@@ -78,9 +78,9 @@ stateDiagram-v2
     DEFINED --> RESEARCH : punk-04-pythagoras
     RESEARCH --> IDEATION : punk-03-edison
     IDEATION --> CRITIQUE : punk-02-lilith
-    CRITIQUE --> REVISION : blocking issues and iteration < max
+    CRITIQUE --> REVISION : blocking=true and iteration < max
     REVISION --> CRITIQUE : re-review
-    CRITIQUE --> VERDICT : no blocking issues, or limit reached
+    CRITIQUE --> VERDICT : blocking=false, or limit reached
     VERDICT --> REVISION : NEEDS_REVISION and iteration < max
     VERDICT --> HITL_APPROVAL : APPROVED
     VERDICT --> FAILED : REJECTED
@@ -91,6 +91,7 @@ stateDiagram-v2
     FAILED --> [*]
     ABORTED --> [*]
     note right of ABORTED : Reachable from every non-terminal state, by stella only
+    note right of VERDICT : Phases whose satellite is not in the roster are skipped, so an APPROVED verdict continues to the next active phase (HITL_APPROVAL, EXECUTION, OPERATIONS or COMPLETED)
 ```
 
 | Phase | Active satellite | Produces | Leaves the phase when |
@@ -111,7 +112,7 @@ stateDiagram-v2
 - **Skipping.** A phase whose satellite is not in the roster is skipped; the mission moves to the next active phase in the order above. `DEFINED`, `VERDICT` and the terminal states are never skipped.
 - **Iteration counter.** `state.iteration` starts at 0 and is incremented each time the mission enters `REVISION`. Records carry the iteration in which they were written.
 - **Loop limit.** `mission.max_iterations` (default 2) caps the number of `REVISION` entries. A value of 0 forbids revisions.
-- **Critique → revision.** If the critique raises blocking issues and `iteration < max_iterations`, the mission goes to `REVISION` and then back to `CRITIQUE`. Otherwise it goes to `VERDICT`. If `punk-02-lilith` is not in the roster, `CRITIQUE` is skipped.
+- **Critique → revision.** The mission goes `CRITIQUE` → `REVISION` if the latest `critique` of the current iteration has `blocking: true` AND `state.iteration < mission.max_iterations`; the revision is then followed by a new `CRITIQUE`. Otherwise it goes `CRITIQUE` → `VERDICT`. Flavors MUST NOT infer blocking from the critique text; only the `blocking` field counts. If `punk-02-lilith` is not in the roster, `CRITIQUE` is skipped.
 - **Verdict.** Shaka's verdict is one of `APPROVED`, `NEEDS_REVISION`, `REJECTED`.
   - `NEEDS_REVISION` returns to `REVISION` and counts toward the loop limit. It is only valid while `iteration < max_iterations`; once the limit is reached, Shaka MUST choose `APPROVED` or `REJECTED`.
   - `REJECTED` moves the mission to `FAILED` unless `stella` restarts it. A restart is a new mission that may reference the old records.

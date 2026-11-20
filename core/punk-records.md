@@ -16,7 +16,9 @@ A Punk Records document has four top-level fields:
 | `state` | `phase` (lifecycle state), `iteration`, `status` (`active`/`completed`/`failed`/`aborted`), `updated_at` |
 | `records` | Ordered array of records |
 
-A record has: `id`, `author`, `type`, `phase`, `iteration`, `content` (Markdown allowed), `refs` (ids of earlier records), optional `confidence` (0–1), `verdict` (only for `type: verdict`), and `created_at`.
+A record has: `id`, `author`, `type`, `phase`, `iteration`, `content` (Markdown allowed), `refs` (ids of earlier records), optional `confidence` (0–1), `verdict` (only for `type: verdict`), `blocking` (only for `type: critique`), and `created_at`.
+
+`blocking` is a boolean that is **required on every `critique` and forbidden on every other type**. It is the machine-readable signal that drives the critique/revision loop: `true` means the critique raises issues that must be addressed before a verdict. Flavors never infer it from the critique text.
 
 ## Append-only rule
 
@@ -37,14 +39,14 @@ A record has: `id`, `author`, `type`, `phase`, `iteration`, `content` (Markdown 
 | `punk-05-atlas` | `artifact`, `note` |
 | `punk-06-york` | `ops_log`, `note` |
 
-The schema rejects a record whose author may not write its type, and requires `verdict` exactly when `type` is `verdict`.
+The schema rejects a record whose author may not write its type, requires `verdict` exactly when `type` is `verdict`, and requires `blocking` exactly when `type` is `critique`.
 
 ## Markdown projection
 
 Flavors that keep Punk Records as files (for example a Claude Code flavor) can use a Markdown projection. It carries the same information as the JSON form and MUST round-trip to it.
 
 - A YAML front matter block holds `schema_version`, `mission` and `state`.
-- Each record is one block: a heading `### [record-id] author · type · phase · iteration`, then a short metadata list (`refs`, `confidence`, `verdict`, `created_at`, omitting what is absent), then the content.
+- Each record is one block: a heading `### [record-id] author · type · phase · iteration`, then a short metadata list (`refs`, `confidence`, `verdict`, `created_at`, omitting what is absent; critiques also carry a `blocking: true|false` line), then the content.
 - Blocks appear in record order. New blocks are appended at the end of the file.
 
 Example:

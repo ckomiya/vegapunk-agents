@@ -59,6 +59,7 @@
       "iteration": 0,
       "content": "Blocking issues:\n- The `:{action}` suffix is a special character that some gateways and proxies treat inconsistently; it is not justified by the findings.\n- No rule for how a domain name is chosen or renamed, so the `{domain}` segment will drift.\n\nNon-blocking: the one-page limit is not checked.",
       "refs": ["r-003"],
+      "blocking": true,
       "created_at": "2026-11-20T10:09:00Z"
     },
     {
@@ -80,6 +81,7 @@
       "iteration": 1,
       "content": "Both blocking issues are resolved. Remaining risk: the registry needs an owner. Non-blocking; no further revision required.",
       "refs": ["r-005", "r-004"],
+      "blocking": false,
       "created_at": "2026-11-20T10:14:00Z"
     },
     {

@@ -126,9 +126,18 @@
         },
         "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
         "verdict": { "$ref": "#/$defs/verdictValue" },
+        "blocking": {
+          "type": "boolean",
+          "description": "Critiques only. true if the critique raises issues that must be addressed before a verdict."
+        },
         "created_at": { "$ref": "#/$defs/timestamp" }
       },
       "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "critique" } }, "required": ["type"] },
+          "then": { "required": ["blocking"] },
+          "else": { "not": { "required": ["blocking"] } }
+        },
         {
           "if": { "properties": { "type": { "const": "verdict" } }, "required": ["type"] },
           "then": { "required": ["verdict"] },
