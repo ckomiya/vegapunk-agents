@@ -39,5 +39,6 @@ All code, comments, and docs are in English.
 - Do not create files outside the current phase's scope.
 - Do not add dependencies without stating them explicitly.
 - Each flavor folder must be self-contained, with its own README and dependency file (added in its phase).
+- Commits carry no AI co-author trailers; the author is the sole author.
 - Versioning: when bumping versions, update `version` in `CITATION.cff` and the README BibTeX block together.
 - Line endings: the repo uses LF (enforced by `.gitattributes`); the author works on Windows, so never commit CRLF.
