@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Gonzales Komiya
+# Dev/CI-only dependency of tools/generate_agents.py (not needed to use the flavor).
+pyyaml>=6,<7

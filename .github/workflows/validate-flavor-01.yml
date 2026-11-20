@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Gonzales Komiya
+name: validate-flavor-01
+
+on:
+  push:
+    paths:
+      - "core/**"
+      - "flavors/01-claude-code/**"
+      - ".github/workflows/validate-flavor-01.yml"
+  pull_request:
+    paths:
+      - "core/**"
+      - "flavors/01-claude-code/**"
+      - ".github/workflows/validate-flavor-01.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install generator dependencies
+        run: pip install -r flavors/01-claude-code/requirements.txt
+      - name: Check generated agents are up to date
+        run: python flavors/01-claude-code/tools/generate_agents.py --check

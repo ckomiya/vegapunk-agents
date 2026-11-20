@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Gonzales Komiya
+#
+# Per-satellite Claude Code subagent settings (stella is the human; no entry).
+# These are DEFAULT values meant for testing. Change them to suit your needs,
+# then regenerate with: python flavors/01-claude-code/tools/generate_agents.py
+satellites:
+  punk-01-shaka:
+    model: sonnet
+    color: blue
+    maxTurns: 5
+    tools: [Read, Grep, Glob]
+  punk-02-lilith:
+    model: sonnet
+    color: red
+    maxTurns: 5
+    tools: [Read, Grep, Glob]
+  punk-03-edison:
+    model: sonnet
+    color: yellow
+    maxTurns: 5
+    tools: [Read, Grep, Glob]
+  punk-04-pythagoras:
+    model: sonnet
+    color: cyan
+    maxTurns: 8
+    tools: [WebSearch, WebFetch, Read, Grep, Glob]
+  punk-05-atlas:
+    model: haiku
+    color: orange
+    maxTurns: 30
+    tools: [Read, Write, Edit, Bash, Grep, Glob]
+  punk-06-york:
+    model: haiku
+    color: purple
+    maxTurns: 15
+    tools: [Read, Edit, Grep, Glob]
