@@ -14,6 +14,7 @@ Runtime dependency: jsonschema.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -303,7 +304,9 @@ class Mission:
     def next_info(self, with_context: bool = False) -> dict:
         info = self._next_info()
         if with_context and info["action"] == "invoke_satellite":
-            info["context"] = build_context(self, info["actor"], False, [])
+            path, digest = write_context_file(self, info["actor"], build_context(self, info["actor"], False, []))
+            info["context_file"] = str(path)
+            info["context_sha256"] = digest
         return info
 
     def _next_info(self) -> dict:
@@ -826,7 +829,39 @@ def cmd_context(args) -> dict:
             f"context is only valid while a satellite is active (current phase: {m.phase}, "
             f"status: {m.doc['state']['status']})"
         )
-    return build_context(m, satellite, args.full, args.include or [])
+    context = build_context(m, satellite, args.full, args.include or [])
+    if not args.write:
+        return context
+    path, digest = write_context_file(m, satellite, context, "-include")
+    return {"ok": True, "context_file": str(path), "context_sha256": digest}
+
+
+CONTEXTS_DIR = "contexts"
+
+
+def write_context_file(m: Mission, satellite: str, context: dict, suffix: str = "") -> tuple[Path, str]:
+    """Write a satellite context to <mission-dir>/contexts/<NN>-<satellite>.json, never overwriting.
+
+    Returns (absolute path, sha256 of the bytes written). NN counts invocations.
+    """
+    folder = m.dir / CONTEXTS_DIR
+    folder.mkdir(parents=True, exist_ok=True)
+    data = dump_json(context)
+    taken = [int(p.name.split("-", 1)[0]) for p in folder.glob("*.json") if p.name.split("-", 1)[0].isdigit()]
+    number = max(taken, default=0) + 1
+    while True:
+        path = folder / f"{number:02d}-{satellite}{suffix}.json"
+        try:
+            with open(path, "xb") as fh:  # exclusive: an existing file is never overwritten
+                fh.write(data)
+                fh.flush()
+                os.fsync(fh.fileno())
+            break
+        except FileExistsError:
+            number += 1
+        except OSError as exc:
+            raise EngineError(f"cannot write context file {path}: {exc}") from None
+    return path.resolve(), hashlib.sha256(data).hexdigest()
 
 
 def runtime_rules(m: Mission) -> list[str]:
@@ -922,6 +957,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--full", action="store_true", help="pass every record the satellite may read")
     p.add_argument("--include", nargs="+", action="extend", metavar="ID",
                    help="also pass these records (e.g. to answer a note asking for context)")
+    p.add_argument("--write", action="store_true",
+                   help="write the context to contexts/<NN>-<satellite>-include.json and print only its path and sha256")
     p.set_defaults(func=cmd_context)
 
     p = sub.add_parser("show", parents=[common], help="print full records by id, in the order requested (read-only)")

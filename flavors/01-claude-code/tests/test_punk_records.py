@@ -3,6 +3,7 @@
 """Tests for .claude/vegapunk/punk_records.py (run: python -m unittest discover -s <this dir>)."""
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -33,7 +34,12 @@ def draft(author, rtype, content="Content.", refs=None, **extra):
 
 
 def without_context(nxt):
-    return {k: v for k, v in nxt.items() if k != "context"}
+    return {k: v for k, v in nxt.items() if k not in ("context_file", "context_sha256")}
+
+
+def ctx_of(nxt):
+    """The context a satellite would read: the file that `next` points to."""
+    return json.loads(Path(nxt["context_file"]).read_text(encoding="utf-8"))
 
 
 class Base(unittest.TestCase):
@@ -75,7 +81,7 @@ class Base(unittest.TestCase):
         return out["errors"]
 
     def snapshot(self):
-        return {p.name: p.read_bytes() for p in sorted(self.dir.iterdir())}
+        return {p.relative_to(self.dir).as_posix(): p.read_bytes() for p in sorted(self.dir.rglob("*")) if p.is_file()}
 
     # -- invariants ------------------------------------------------------
     def doc(self):
@@ -396,9 +402,9 @@ class InitTests(Base):
 
     def test_json_rule_comes_from_the_script_for_every_satellite(self):
         out = self.init("standard")
-        self.assertIn(self.JSON_RULE, out["next"]["context"]["runtime_limits"]["rules"])
+        self.assertIn(self.JSON_RULE, ctx_of(out["next"])["runtime_limits"]["rules"])
         nxt = self.append(draft("punk-04-pythagoras", "finding"))["next"]
-        self.assertIn(self.JSON_RULE, nxt["context"]["runtime_limits"]["rules"])
+        self.assertIn(self.JSON_RULE, ctx_of(nxt)["runtime_limits"]["rules"])
         self.assertNotEqual(nxt["actor"], "punk-04-pythagoras")
 
     def test_search_limit_defaults_to_3(self):
@@ -406,7 +412,7 @@ class InitTests(Base):
         engine = json.loads((self.dir / "engine.json").read_text(encoding="utf-8"))
         self.assertEqual(engine["search_limit"], 3)
         limits = {"web_searches": 3, "draft_words": 250}
-        self.assertLimits(out["next"]["context"]["runtime_limits"], limits)
+        self.assertLimits(ctx_of(out["next"])["runtime_limits"], limits)
         code, ctx = self.run_cli("context")
         self.assertEqual(code, 0, ctx)
         self.assertLimits(ctx["runtime_limits"], limits)
@@ -414,16 +420,16 @@ class InitTests(Base):
     def test_search_limit_reaches_context_and_next_context(self):
         out = self.init("standard", "--search-limit", "6")
         limits = {"web_searches": 6, "draft_words": 250}
-        self.assertLimits(out["next"]["context"]["runtime_limits"], limits)
+        self.assertLimits(ctx_of(out["next"])["runtime_limits"], limits)
         code, ctx = self.run_cli("context")
         self.assertEqual(code, 0, ctx)
         self.assertLimits(ctx["runtime_limits"], limits)
         nxt = self.append(draft("punk-04-pythagoras", "finding"))["next"]
-        self.assertLimits(nxt["context"]["runtime_limits"], limits)
+        self.assertLimits(ctx_of(nxt)["runtime_limits"], limits)
 
     def test_search_limit_zero_is_allowed(self):
         out = self.init("light", "--search-limit", "0")
-        self.assertEqual(out["next"]["context"]["runtime_limits"]["web_searches"], 0)
+        self.assertEqual(ctx_of(out["next"])["runtime_limits"]["web_searches"], 0)
 
     def test_negative_search_limit_is_rejected(self):
         code, out = self.run_cli("init", "--goal", "G", "--mode", "light",
@@ -476,16 +482,16 @@ class InitTests(Base):
         out = self.init("light")
         engine = json.loads((self.dir / "engine.json").read_text(encoding="utf-8"))
         self.assertEqual(engine["draft_words"], 250)
-        self.assertEqual(out["next"]["context"]["runtime_limits"]["draft_words"], 250)
+        self.assertEqual(ctx_of(out["next"])["runtime_limits"]["draft_words"], 250)
 
     def test_draft_words_reaches_context_and_next_context(self):
         out = self.init("standard", "--draft-words", "500")
-        self.assertEqual(out["next"]["context"]["runtime_limits"]["draft_words"], 500)
+        self.assertEqual(ctx_of(out["next"])["runtime_limits"]["draft_words"], 500)
         code, ctx = self.run_cli("context")
         self.assertEqual(code, 0, ctx)
         self.assertEqual(ctx["runtime_limits"]["draft_words"], 500)
         nxt = self.append(draft("punk-04-pythagoras", "finding"))["next"]
-        self.assertEqual(nxt["context"]["runtime_limits"]["draft_words"], 500)
+        self.assertEqual(ctx_of(nxt)["runtime_limits"]["draft_words"], 500)
 
     def test_invalid_draft_words_is_rejected(self):
         for value in ("0", "-5"):
@@ -712,22 +718,118 @@ class ShowTests(Base):
         self.assertEqual(self.snapshot(), before)
 
 
+class ContextFileTests(Base):
+    def contexts(self):
+        return sorted((self.dir / "contexts").glob("*.json")) if (self.dir / "contexts").exists() else []
+
+    def test_file_has_expected_content_and_correct_sha256(self):
+        out = self.init("light")
+        nxt = out["next"]
+        path = Path(nxt["context_file"])
+        self.assertTrue(path.is_absolute())
+        self.assertEqual(path, (self.dir / "contexts" / "01-punk-03-edison.json").resolve())
+        self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), nxt["context_sha256"])
+        code, ctx = self.run_cli("context")
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), ctx)
+
+    def test_next_has_no_inline_context(self):
+        out = self.init("light")
+        self.assertNotIn("context", out["next"])
+        nxt = self.append(draft("punk-03-edison", "proposal", refs=["r-001"]))["next"]
+        self.assertNotIn("context", nxt)
+        self.assertEqual(Path(nxt["context_file"]).name, "02-punk-01-shaka.json")
+
+    def test_counter_increases_and_nothing_is_overwritten(self):
+        self.init("light")
+        first = self.contexts()[0]
+        first_bytes = first.read_bytes()
+        self.append(draft("punk-03-edison", "proposal", refs=["r-001"]))
+        self.assertEqual([p.name for p in self.contexts()], ["01-punk-03-edison.json", "02-punk-01-shaka.json"])
+        self.assertEqual(first.read_bytes(), first_bytes)
+
+    def test_new_invocation_for_same_satellite_makes_a_new_file(self):
+        sys.path.insert(0, str(VEGAPUNK_DIR))
+        try:
+            import punk_records
+        finally:
+            sys.path.remove(str(VEGAPUNK_DIR))
+        self.init("light")
+        m, _, _ = punk_records.load_mission(self.dir)
+        before = self.contexts()[0].read_bytes()
+        ctx = punk_records.build_context(m, "punk-03-edison", False, [])
+        p1, _ = punk_records.write_context_file(m, "punk-03-edison", ctx)
+        p2, _ = punk_records.write_context_file(m, "punk-03-edison", ctx)
+        self.assertEqual(len({p.name for p in self.contexts()}), 3)
+        self.assertNotIn(p1, (p2, self.contexts()[0].resolve()))
+        self.assertEqual(self.contexts()[0].read_bytes(), before)
+
+    def test_context_command_writes_no_file(self):
+        self.init("light")
+        before = self.snapshot()
+        self.run_cli("context")
+        self.run_cli("context", "--full")
+        self.assertEqual(self.snapshot(), before)
+
+    def test_write_flag_writes_include_file_and_prints_only_its_path(self):
+        self.init("light")
+        code, plain = self.run_cli("context", "--include", "r-001")
+        code, out = self.run_cli("context", "--include", "r-001", "--write")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(set(out), {"ok", "context_file", "context_sha256"})
+        path = Path(out["context_file"])
+        self.assertEqual(path, (self.dir / "contexts" / "02-punk-03-edison-include.json").resolve())
+        self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), out["context_sha256"])
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), plain)
+
+    def test_write_flag_never_overwrites(self):
+        self.init("light")
+        first = self.run_cli("context", "--include", "r-001", "--write")[1]
+        before = Path(first["context_file"]).read_bytes()
+        second = self.run_cli("context", "--include", "r-001", "--write")[1]
+        self.assertNotEqual(first["context_file"], second["context_file"])
+        self.assertEqual(Path(first["context_file"]).read_bytes(), before)
+        self.assertEqual(len(self.contexts()), 3)
+
+    def test_write_flag_with_invalid_include_writes_nothing(self):
+        self.init("light")
+        before = self.snapshot()
+        code, out = self.run_cli("context", "--include", "r-099", "--write")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_without_write_flag_nothing_changes(self):
+        self.init("light")
+        before = self.snapshot()
+        code, out = self.run_cli("context", "--include", "r-001")
+        self.assertIn("records", out)
+        self.assertNotIn("context_file", out)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_no_file_when_no_satellite_is_invoked(self):
+        self.init("light", "--hitl-after-verdict")
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        count = len(self.contexts())
+        self.run_cli("approve")
+        self.assertEqual(len(self.contexts()), count)
+
+
 class NextContextTests(Base):
     def test_next_context_only_with_invoke_satellite_and_equals_context(self):
         out = self.init("light", "--hitl-after-verdict")
         code, ctx = self.run_cli("context")
-        self.assertEqual(out["next"]["context"], ctx)
+        self.assertEqual(ctx_of(out["next"]), ctx)
         out = self.append(draft("punk-03-edison", "proposal", refs=["r-001"]))
         code, ctx = self.run_cli("context")
         self.assertEqual(out["next"]["action"], "invoke_satellite")
-        self.assertEqual(out["next"]["context"], ctx)
+        self.assertEqual(ctx_of(out["next"]), ctx)
         out = self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED", refs=["r-002"]))
         self.assertEqual(out["next"]["action"], "await_hitl")
-        self.assertNotIn("context", out["next"])
+        self.assertNotIn("context_file", out["next"])
         out = self.run_cli("approve")[1]
         self.assertEqual(out["next"]["action"], "completed")
-        self.assertNotIn("context", out["next"])
-        self.assertNotIn("context", self.run_cli("status")[1]["next"])
+        self.assertNotIn("context_file", out["next"])
+        self.assertNotIn("context_file", self.run_cli("status")[1]["next"])
 
     def test_approve_returns_context_for_atlas(self):
         self.init("full")
@@ -738,7 +840,7 @@ class NextContextTests(Base):
         out = self.run_cli("approve")[1]
         code, ctx = self.run_cli("context")
         self.assertEqual(out["next"]["actor"], "punk-05-atlas")
-        self.assertEqual(out["next"]["context"], ctx)
+        self.assertEqual(ctx_of(out["next"]), ctx)
 
 
 class ReportTests(Base):
@@ -974,9 +1076,9 @@ class NoteTests(Base):
         code, out = self.note("--text", "Prefer open sources.")
         self.assertEqual(code, 0, out)
         stored = self.doc()["records"][-1]
-        self.assertIn(stored, out["next"]["context"]["records"])
+        self.assertIn(stored, ctx_of(out["next"])["records"])
         code, ctx = self.run_cli("context")
-        self.assertEqual(out["next"]["context"], ctx)
+        self.assertEqual(ctx_of(out["next"]), ctx)
         self.assertIn("r-002", [r["id"] for r in ctx["records"]])
 
 

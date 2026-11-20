@@ -25,6 +25,7 @@ flowchart LR
 
 1. Stella talks to the engine, which is the main Claude Code session running the `/vegapunk` skill.
 2. For each phase the engine launches one subagent and passes it only its selected context (core "Selective reading").
+   The context never passes through the engine: `punk_records.py` writes it to `<mission-dir>/contexts/<NN>-<satellite>.json` (never overwritten, one file per invocation) and returns only its path and `sha256`. The subagent reads that file itself, so the engine cannot alter, drop or summarize records.
 3. The engine saves the satellite's JSON drafts. `punk_records.py` validates them against the core schema, appends them to `punk-records.json`, emits `events.jsonl` and computes the next phase.
 4. Satellites never talk to each other and cannot spawn subagents (`disallowedTools: Agent`).
 
