@@ -388,25 +388,38 @@ class InitTests(Base):
         self.assertEqual(doc["mission"]["constraints"], ["Be short"])
         self.assertEqual(doc["state"], {**doc["state"], "iteration": 0, "status": "active"})
 
+    JSON_RULE = "Output must be valid JSON: escape backslashes and double quotes inside strings."
+
+    def assertLimits(self, got, limits):
+        self.assertEqual({k: v for k, v in got.items() if k != "rules"}, limits)
+        self.assertIn(self.JSON_RULE, got["rules"])
+
+    def test_json_rule_comes_from_the_script_for_every_satellite(self):
+        out = self.init("standard")
+        self.assertIn(self.JSON_RULE, out["next"]["context"]["runtime_limits"]["rules"])
+        nxt = self.append(draft("punk-04-pythagoras", "finding"))["next"]
+        self.assertIn(self.JSON_RULE, nxt["context"]["runtime_limits"]["rules"])
+        self.assertNotEqual(nxt["actor"], "punk-04-pythagoras")
+
     def test_search_limit_defaults_to_3(self):
         out = self.init("light")
         engine = json.loads((self.dir / "engine.json").read_text(encoding="utf-8"))
         self.assertEqual(engine["search_limit"], 3)
         limits = {"web_searches": 3, "draft_words": 250}
-        self.assertEqual(out["next"]["context"]["runtime_limits"], limits)
+        self.assertLimits(out["next"]["context"]["runtime_limits"], limits)
         code, ctx = self.run_cli("context")
         self.assertEqual(code, 0, ctx)
-        self.assertEqual(ctx["runtime_limits"], limits)
+        self.assertLimits(ctx["runtime_limits"], limits)
 
     def test_search_limit_reaches_context_and_next_context(self):
         out = self.init("standard", "--search-limit", "6")
         limits = {"web_searches": 6, "draft_words": 250}
-        self.assertEqual(out["next"]["context"]["runtime_limits"], limits)
+        self.assertLimits(out["next"]["context"]["runtime_limits"], limits)
         code, ctx = self.run_cli("context")
         self.assertEqual(code, 0, ctx)
-        self.assertEqual(ctx["runtime_limits"], limits)
+        self.assertLimits(ctx["runtime_limits"], limits)
         nxt = self.append(draft("punk-04-pythagoras", "finding"))["next"]
-        self.assertEqual(nxt["context"]["runtime_limits"], limits)
+        self.assertLimits(nxt["context"]["runtime_limits"], limits)
 
     def test_search_limit_zero_is_allowed(self):
         out = self.init("light", "--search-limit", "0")
@@ -424,7 +437,7 @@ class InitTests(Base):
         (self.dir / "engine.json").write_text('{"hitl_after_verdict": false}\n', encoding="utf-8")
         code, ctx = self.run_cli("context")
         self.assertEqual(code, 0, ctx)
-        self.assertEqual(ctx["runtime_limits"], {"web_searches": 3, "draft_words": 250})
+        self.assertLimits(ctx["runtime_limits"], {"web_searches": 3, "draft_words": 250})
 
     def init_raw(self, *args):
         return self.run_cli("init", "--mode", "light", "--mission-dir", str(self.dir), *args)

@@ -780,6 +780,16 @@ def cmd_context(args) -> dict:
     return build_context(m, satellite, args.full, args.include or [])
 
 
+def runtime_rules(m: Mission) -> list[str]:
+    """The Runtime limits lines every satellite receives inside its context."""
+    return [
+        f"Keep the content of each draft under about {m.draft_words} words.",
+        f"punk-04-pythagoras only: use at most {m.search_limit} web searches.",
+        "Respond with only the JSON array of record drafts.",
+        "Output must be valid JSON: escape backslashes and double quotes inside strings.",
+    ]
+
+
 def build_context(m: Mission, satellite: str, full: bool, include: list[str]) -> dict:
     """The exact output of the `context` command for the given satellite."""
     passed, readable = select_context(m, satellite, full, include)
@@ -789,7 +799,11 @@ def build_context(m: Mission, satellite: str, full: bool, include: list[str]) ->
         "satellite": satellite,
         "mission": {k: mission[k] for k in ("goal", "mode", "roster", "constraints", "max_iterations")},
         "state": {"phase": m.phase, "iteration": m.iteration},
-        "runtime_limits": {"web_searches": m.search_limit, "draft_words": m.draft_words},
+        "runtime_limits": {
+            "web_searches": m.search_limit,
+            "draft_words": m.draft_words,
+            "rules": runtime_rules(m),
+        },
         "records": passed,
         "selection": {
             "mode": "full" if full else "selective",
