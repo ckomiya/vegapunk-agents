@@ -773,6 +773,36 @@ def cmd_timeline(args) -> str:
     return "\n".join(lines) + "\n"
 
 
+def cmd_sources(args) -> str:
+    """Markdown list of the lines under '## Sources' of every finding (read-only, writes nothing)."""
+    m, _, _ = load_mission(resolve_dir(args))
+    findings = [r for r in m.doc["records"] if r["type"] == "finding"]
+    if not findings:
+        return "No findings recorded.\n"
+    out = [f"# Sources — mission {m.doc['mission']['id']}", ""]
+    for r in findings:
+        out += [f"## {r['id']} — {r['author']}", ""]
+        section: list[str] | None = None
+        for line in r["content"].split("\n"):
+            if section is None:
+                if line.strip() == "## Sources":
+                    section = []
+            elif line.startswith("## "):
+                break
+            else:
+                section.append(line.rstrip("\r"))
+        if section is None:
+            out.append("(no Sources section)")
+        else:
+            while section and not section[0].strip():
+                section.pop(0)
+            while section and not section[-1].strip():
+                section.pop()
+            out += section or ["(no Sources section)"]
+        out.append("")
+    return "\n".join(out)
+
+
 def _utc_time(stamp: str) -> str:
     try:
         dt = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
@@ -968,6 +998,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("timeline", parents=[common], help="print the mission history as Markdown, grouped by satellite (read-only)")
     p.set_defaults(func=cmd_timeline)
 
+    p = sub.add_parser("sources", parents=[common], help="print the Sources lines of every finding as Markdown (read-only)")
+    p.set_defaults(func=cmd_sources)
+
     p = sub.add_parser("report", parents=[common], help="write deliverable.md for a finished mission")
     p.set_defaults(func=cmd_report)
     return ap
@@ -988,7 +1021,7 @@ def main(argv: list[str] | None = None) -> int:
         return fail("invalid arguments (see --help)")
     try:
         result = args.func(args)
-        if isinstance(result, str):  # Markdown output (timeline)
+        if isinstance(result, str):  # Markdown output (timeline, sources)
             sys.stdout.write(result)
             return 0
         return emit(result)

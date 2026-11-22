@@ -984,6 +984,42 @@ class TimelineTests(Base):
         self.assertIn("refs r-003, r-005", lines[5])
 
 
+class SourcesTests(Base):
+    def run_sources(self):
+        proc = subprocess.run([sys.executable, str(SCRIPT), "sources", "--mission-dir", str(self.dir)],
+                              capture_output=True, text=True, encoding="utf-8")
+        return proc.returncode, proc.stdout
+
+    def test_several_findings_and_one_without_sources(self):
+        self.init("standard")
+        self.append(
+            draft("punk-04-pythagoras", "finding",
+                  content="## Claim\nA.\n\n## Sources\n- https://example.org/a\n- https://example.org/b\n\n## Recency\n2026"),
+            draft("punk-04-pythagoras", "finding", content="## Claim\nB.\n\n## Limitations\nNone."),
+            draft("punk-04-pythagoras", "finding", content="## Claim\nC.\n\n## Sources\n  * https://example.org/c  "),
+            draft("punk-04-pythagoras", "note", content="## Sources\n- not a finding"),
+        )
+        before = self.snapshot()
+        code, text = self.run_sources()
+        self.assertEqual(code, 0, text)
+        self.assertEqual(self.snapshot(), before)  # writes nothing
+        self.assertIn("## r-002 — punk-04-pythagoras\n\n- https://example.org/a\n- https://example.org/b\n", text)
+        self.assertIn("## r-003 — punk-04-pythagoras\n\n(no Sources section)\n", text)
+        self.assertIn("## r-004 — punk-04-pythagoras\n\n  * https://example.org/c  \n", text)
+        self.assertNotIn("r-005", text)
+        self.assertNotIn("Recency", text)
+        self.assertLess(text.index("r-002"), text.index("r-003"))
+        self.assertLess(text.index("r-003"), text.index("r-004"))
+
+    def test_no_findings(self):
+        self.init("light")
+        before = self.snapshot()
+        code, text = self.run_sources()
+        self.assertEqual(code, 0, text)
+        self.assertEqual(text, "No findings recorded.\n")
+        self.assertEqual(self.snapshot(), before)
+
+
 class NoteTests(Base):
     TEXT = "  Keep it  short.\n\nSecond paragraph, with   spaces.  "
 
