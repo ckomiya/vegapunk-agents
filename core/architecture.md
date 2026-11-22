@@ -140,6 +140,7 @@ stateDiagram-v2
 - **Mandatory before `EXECUTION`.** If `punk-05-atlas` is in the roster, the mission MUST pass `HITL_APPROVAL`: execution never starts without a `stella` `approval` record.
 - **Optional after `VERDICT`.** In every other case `stella` MAY require `HITL_APPROVAL`; Light mode typically uses it as the only human gate. When not required, the phase is skipped.
 - **Declining.** At `HITL_APPROVAL`, `stella` either approves (writes an `approval` record) or aborts the mission. To change course instead, `stella` aborts and starts a new mission.
+- **Sources before approval.** Before asking `stella` to approve, the flavor's engine MUST show the external sources that support the decision (those listed in the mission's `finding` records).
 - **Abort at any time.** `stella` can move the mission to `ABORTED` from any non-terminal state.
 - A flavor MUST emit `hitl_requested` when it enters the checkpoint and `hitl_resolved` when `stella` answers. `hitl_resolved` MUST be emitted before the `record_written` event of the `approval` record.
 
