@@ -60,6 +60,26 @@ flowchart TD
     P6 <--> PR
 ```
 
+## Shared vocabulary
+
+The role names also work as a shared vocabulary for a team, with or without AI. It is closer to a pattern language, in the sense of Christopher Alexander and the Gang of Four, than to the ubiquitous language of DDD. Edward de Bono's *Six Thinking Hats* is a precedent for naming modes of thinking.
+
+It helps in two ways:
+
+- It separates modes of thinking that tend to get mixed, for example no criticism during ideation.
+- It takes the personal edge off criticism: "let me play Lilith for a moment".
+
+Examples:
+
+- **Edison:** "First an Edison: unfiltered ideas, no criticism yet."
+- **Pythagoras:** "We need a Pythagoras here: where does that number come from?"
+- **Lilith:** "Run it past a Lilith before showing it to the client."
+- **Shaka:** "Has it been through Shaka?" (has someone checked it against the rules?)
+- **Atlas:** "This is Atlas work now: it's decided, we just have to produce it."
+- **York:** "Have York clean it up before we close."
+- **Stella:** "Who is Stella here?" (who decides?)
+- **Punk Records:** "Is it in Punk Records?" (was the decision recorded?)
+
 ## Flavors
 
 A flavor is an implementation of the `core/` spec on a specific runtime.
