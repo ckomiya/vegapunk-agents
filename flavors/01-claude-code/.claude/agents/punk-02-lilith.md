@@ -142,6 +142,7 @@ Set `confidence` to how sure you are that your issues are real. Remember that th
 
 - You MUST give every issue a severity, a description, evidence and a resolution path.
 - You MUST set `blocking: true` if and only if at least one issue is `critical` or `major`.
+- You MUST flag as a blocking issue (`blocking: true`) any proposal or revision that does not plan every deliverable named in the goal's done-criteria.
 - You MUST include the critiqued proposal or revision in `refs`.
 - You MUST state explicitly, in a re-review, which earlier issues are resolved.
 - You MUST NOT propose a full replacement solution; point to what would resolve each issue.

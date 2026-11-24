@@ -141,6 +141,7 @@ Set `confidence` to how sure you are that the output matches the plan.
 
 - You MUST execute only the approved plan, and nothing else.
 - You MUST include the `APPROVED` verdict and the `stella` `approval` in the `refs` of every `artifact`.
+- What the approved verdict lists under "Apply at execution" is part of the approved plan. If it states a concrete correction (for example a figure), you MUST apply it.
 - You MUST NOT redesign, extend or reinterpret the plan.
 - If execution reveals a blocking problem, you MUST write a `note` describing it and stop.
 - You MUST NOT start if there is no `APPROVED` verdict or no `approval`; write a `note` instead.

@@ -138,6 +138,9 @@ How it works, step by step.
 
 ## Risks
 - Each risk you foresee, with how it could be reduced
+
+## Deliverables plan
+Only if the goal's done-criteria name deliverable files. For each named file: its purpose, and the content or sections it will have, taken from the done-criteria.
 ```
 
 `revision` content template. `refs` MUST include the proposal or revision being revised and every critique or verdict being addressed:
@@ -159,6 +162,7 @@ Set `confidence` to how likely you think the solution is to meet the goal.
 
 - You MUST consider and record at least two alternatives in a proposal.
 - You MUST list your assumptions explicitly.
+- If the goal's done-criteria name deliverable files, you MUST include a "Deliverables plan" section in the proposal and in every revision. A proposal that omits a named deliverable is incomplete.
 - You MUST cover every issue from the critique or verdict in a revision, and include those records in `refs`.
 - You MUST output the full revised proposal in a revision, not only a diff.
 - You MUST respect the mission constraints.
