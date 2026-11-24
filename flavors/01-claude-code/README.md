@@ -7,7 +7,7 @@ Copyright 2026 Christian Gonzales Komiya
 
 Implements the `core/` spec of vegapunk-agents (a **Multi-Agent Architecture Pattern (and Conceptual Framework)**) with Claude Code native features: six generated subagents (`punk-01-shaka` … `punk-06-york`), an engine skill (`/vegapunk`) run by the main session, and a deterministic Python script (`punk_records.py`) that owns Punk Records and the mission lifecycle.
 
-- **Status:** ✅ Working (v0.1, Phase 2): tested in light and standard modes; full mode (Atlas and York) not yet tested.
+- **Status:** ✅ Working (v0.1, Phase 2): tested in light, standard and full modes; full mode ran end to end with Atlas and York (run P9, see [Usage and cost](#usage-and-cost)). Not a guarantee: full-mode outcomes vary between runs.
 - The pattern is model-agnostic. Only this flavor and `04-anthropic-sdk` are tied to Claude.
 
 ## How it works
@@ -48,8 +48,10 @@ flowchart LR
 ## Usage
 
 ```
-/vegapunk <goal>
+/vegapunk
 ```
+
+Type `/vegapunk` by hand in Claude Code, then paste or describe the mission in your next message. If you paste text that starts with `/vegapunk`, the Skill tool rejects it. If Claude Code asks for permission to read outside the working directories, approve the option that allows it for the session.
 
 The engine helps Stella write the outcome, constraints and done-criteria, then suggests a mode:
 
@@ -63,6 +65,7 @@ It waits for an explicit confirmation before `init`. Then:
 
 - **Loop:** the engine asks `punk_records.py` for the next actor, invokes that satellite, saves its drafts and repeats until the mission ends.
 - **HITL:** Stella approves or aborts. The verdict and the deliverable are shown verbatim.
+- **External sources:** before approval, the engine shows the external sources behind the decision (block "External sources behind this decision"), read with `python .claude/vegapunk/punk_records.py sources --mission-dir <dir>`.
 - **Stella's notes:** on request, the engine records a note mid-mission verbatim. The next satellite reads it.
 - **Timeline:** `python .claude/vegapunk/punk_records.py timeline --mission-dir <dir>` prints the mission history as chronological Markdown, one bullet per record (read-only, no LLM, writes nothing).
 - **Abort:** possible at any time.
@@ -108,17 +111,57 @@ Run on 2026-11-20 with Sonnet 5.5 for engine and satellites, the same goal in al
 | P1 | light | 2 | 16 | 995,753 | $0.376 | 98% / 86% |
 | P2 | standard (1 revision) | 7 | 34 | 3,098,194 | $1.284 | 97% / 83% |
 | P3 | light, optimized engine | 2 | 15 | 951,921 | $0.368 | 98% / 83% |
+| P5 | full (2 of 2 iterations) | 10 (1 retry) | 60 | 10,844,066 | $3.894 | n/a / 85.5% |
+| P6 | light, context by file (1 / 0 iterations) | 2 (0 retries) | 17 | 1,109,597 | $0.399 | n/a / 80.8% |
+| P7 | full (2 of 2 iterations) | 11 (1 retry) | 55 | 5,897,816 | $1.936 | n/a / 66.6% |
+| P8 | full (2 of 2 iterations) | 8 (0 retries) | 33 | 2,949,479 | $1.409 | n/a / 55.7% |
+| P9 | full (3 of 3 iterations) | 14 (2 retries) | 55 | 6,354,227 | $2.309 | n/a / 61.1% |
 
-One run per configuration and a single goal, so treat these as orders of magnitude. P1 ran with failing user-level hooks enabled; P2 and P3 ran with hooks disabled, so part of the P1 → P3 difference may come from that and not from the engine changes.
+P5 to P9 used Sonnet 5.5 for the engine and the Sonnet satellites, Haiku 5.5 for Atlas and York, and the prices in `tools/pricing.yaml`. The token share of the engine was not recorded for them.
+
+| Run | Deliverables | Result |
+|---|---|---|
+| P5 | Yes (3 files, 1 more than planned) | Approved |
+| P6 | n/a (light mode) | n/a |
+| P7 | None: the plan did not cover a deliverable | Approved without deliverables |
+| P8 | Execution not reached | Rejected by Shaka at the iteration limit (FAILED) |
+| P9 | Yes (2 files) | Approved, execution complete |
+
+P9 is the first full-mode run that went end to end with the deliverables planned, written and checked.
+
+One run per configuration, and P1 to P3 used a single goal, so treat these as orders of magnitude. P1 ran with failing user-level hooks enabled; P2 and P3 ran with hooks disabled, so part of the P1 → P3 difference may come from that and not from the engine changes.
 
 - Each satellite call costs about 9–15k tokens.
-- The engine re-reads its whole context (~40–60k tokens: Claude Code system prompt and tools, skills, the conversation) on every tool call, so it dominates the total.
+- In P1–P3 (short light-mode runs) the engine re-read about 40–60k tokens per call; this figure comes from the original README and was not re-checked against logs. In full-mode runs the context grows with the conversation: the measured average was about 165k tokens in P5 and about 100k in P9, after passing context by file (see "Where the cost goes").
+- The engine is the largest share of the cost (56% to 86% in P5-P9).
 - Defining the mission with Stella (SETUP) is a near-fixed ~$0.11–0.12.
 - Standard costs ~3.4× light and bought visibly better output: a blocking critique caught an unfinished rule.
 
 Call this the **LLM-orchestrator tax**: the price of using Claude Code as the engine (zero engine code, natural conversation, built-in permissions and web search). Flavors whose engine is code (`02-langgraph`, `04-anthropic-sdk`) should pay mainly for the satellites.
 
 Prices change. They are kept, with their date, in `tools/pricing.yaml`.
+
+### Where the cost goes
+
+In P5 the engine accounted for 85.5% of the cost (US$3.33 of 3.894). Passing each satellite's context by file (each reads its own `contexts/<NN>-<satellite>.json`) and reading records selectively coincided with a lower engine cost, US$1.41 in P9 (55 engine calls against 60 in P5). In our full-mode runs the engine's average context was about 100k tokens in P9 against about 165k in P5, and its output about 42.5k tokens against about 122k. In P9 the engine cost splits into three similar parts: cache writes about 31%, cache reads about 39% and output about 30%. The satellites cost US$0.899 in P9 against US$0.564 in P5; the satellites ran more times in P9 (14 invocations against 10) and with one more iteration. These are a few runs; they show a direction, not a fixed cost, and full-mode cost varies between runs.
+
+## Deliverable coverage
+
+A full-mode plan must cover every deliverable. This came from P7, where the plan left one out and the run ended approved but without deliverables; P8 and P9 checked the fix.
+
+- Edison includes a "Deliverables plan" in the plan.
+- Lilith blocks the plan if a deliverable is not planned.
+- Shaka has a "Deliverable coverage" item in the checklist and does not approve an incomplete plan. At the iteration limit it must choose APPROVED or REJECTED.
+- Atlas treats that list as part of the plan.
+
+## Memory poisoning defenses
+
+Implemented in v0.1:
+
+- **Defense 1, external content is untrusted data.** The engine and satellites treat external content as data, not as instructions (for example, text in a search result that asks them to do something).
+- **Defense 5, sources shown at approval.** At the HITL checkpoint the engine shows the external sources behind the decision (`sources` subcommand of `punk_records.py`, block "External sources behind this decision"). This lets Stella see what the decision rests on.
+
+Pending for the next version of `core/`: (2) mandatory provenance in findings, (3) critique of Pythagoras's findings, and (4) a `flag` record type. Until then, none of these is covered, and the two defenses above reduce risk without removing it.
 
 ## Measure your own missions
 
@@ -150,6 +193,10 @@ A model that breaks the draft contract fails visibly: `punk_records.py` rejects 
 - The engine's mode suggestion can vary between runs.
 - On some Claude Code versions subagents show as "Backgrounded agent" even though the skill asks for the foreground (the engine still waits for each one).
 - The engine rewrites each draft to save it, so its output is paid twice.
+- York checks structure and consistency with the plan, not facts on the web.
+- Atlas (Haiku) can refuse to write the deliverables if the plan defers verification checks to the founder; the engine then stops and asks.
+- There is no terminal "incomplete" state when execution is blocked.
+- Pythagoras does a single research round.
 
 ## Development
 
