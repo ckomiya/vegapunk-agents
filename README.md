@@ -134,13 +134,13 @@ See [CITATION.cff](CITATION.cff), or use GitHub's "Cite this repository" button.
   author  = {Gonzales Komiya, Christian},
   title   = {vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)},
   year    = {2026},
-  version = {0.1.0},
+  version = {0.2.0},
   doi     = {10.5281/zenodo.24384581},
   url     = {https://github.com/ckomiya/vegapunk-agents}
 }
 ```
 
-APA: Gonzales Komiya, C. (2026). *vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)* (Version 0.1.0) [Computer software]. https://doi.org/10.5281/zenodo.24384581
+APA: Gonzales Komiya, C. (2026). *vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)* (Version 0.2.0) [Computer software]. https://doi.org/10.5281/zenodo.24384581
 
 ### Inspiration note
 

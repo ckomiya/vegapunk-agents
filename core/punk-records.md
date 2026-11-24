@@ -11,7 +11,7 @@ A Punk Records document has four top-level fields:
 
 | Field | Content |
 |---|---|
-| `schema_version` | Always `"0.1.0"` in this version of the spec |
+| `schema_version` | Version of the document format. It is `"0.1.0"` in specification 0.2.0 too, because the format has not changed since 0.1.0 |
 | `mission` | `id`, `goal`, `mode` (`light`/`standard`/`full`), `roster` (satellite ids), `constraints`, `max_iterations` (default 2), `created_at` |
 | `state` | `phase` (lifecycle state), `iteration`, `status` (`active`/`completed`/`failed`/`aborted`), `updated_at` |
 | `records` | Ordered array of records |

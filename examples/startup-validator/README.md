@@ -54,7 +54,7 @@ Mission folders (`.vegapunk/`) and `./startup-validator-output/` stay local if y
 
 ## Cost
 
-A complete run with the flavor 01 engine cost about US$2.3 at API prices in our last run; it varies between runs, and Light and Standard modes cost less. The measurement method and the Light and Standard figures are in the [flavor 01 README](../../flavors/01-claude-code/README.md#usage-and-cost); the full-mode figure is not published there yet and will be added with the flavor.
+A complete run with the flavor 01 engine cost about US$2.3 at API prices in our last run; it varies between runs, and Light and Standard modes cost less. The measurement method and the Light and Standard figures are in the [flavor 01 README](../../flavors/01-claude-code/README.md#usage-and-cost); the full-mode run (P9) is in its [Measured runs](../../flavors/01-claude-code/README.md#measured-runs) table.
 
 ## Relationship to the framework
 

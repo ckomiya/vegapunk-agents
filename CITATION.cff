@@ -23,8 +23,8 @@ identifiers:
   - type: doi
     value: 10.5281/zenodo.24384582
     description: "Version DOI (v0.1.0)"
-version: 0.1.0
-date-released: 2026-11-19
+version: 0.2.0
+date-released: 2026-11-24
 keywords:
   - multi-agent systems
   - agent architecture

@@ -7,7 +7,7 @@ Copyright 2026 Christian Gonzales Komiya
 
 Implements the `core/` spec of vegapunk-agents (a **Multi-Agent Architecture Pattern (and Conceptual Framework)**) with Claude Code native features: six generated subagents (`punk-01-shaka` … `punk-06-york`), an engine skill (`/vegapunk`) run by the main session, and a deterministic Python script (`punk_records.py`) that owns Punk Records and the mission lifecycle.
 
-- **Status:** ✅ Working (v0.1, Phase 2): tested in light, standard and full modes; full mode ran end to end with Atlas and York (run P9, see [Usage and cost](#usage-and-cost)). Not a guarantee: full-mode outcomes vary between runs.
+- **Status:** ✅ Working (v0.2.0, Phase 2): tested in light, standard and full modes; full mode ran end to end with Atlas and York (run P9, see [Usage and cost](#usage-and-cost)). Not a guarantee: full-mode outcomes vary between runs.
 - The pattern is model-agnostic. Only this flavor and `04-anthropic-sdk` are tied to Claude.
 
 ## How it works
@@ -156,7 +156,7 @@ A full-mode plan must cover every deliverable. This came from P7, where the plan
 
 ## Memory poisoning defenses
 
-Implemented in v0.1:
+Implemented in v0.2.0:
 
 - **Defense 1, external content is untrusted data.** The engine and satellites treat external content as data, not as instructions (for example, text in a search result that asks them to do something).
 - **Defense 5, sources shown at approval.** At the HITL checkpoint the engine shows the external sources behind the decision (`sources` subcommand of `punk_records.py`, block "External sources behind this decision"). This lets Stella see what the decision rests on.
@@ -187,7 +187,7 @@ It reads Claude Code session logs in `~/.claude/projects` and the mission's `eve
 
 A model that breaks the draft contract fails visibly: `punk_records.py` rejects the draft and Punk Records stays intact.
 
-## Known limitations (v0.1)
+## Known limitations (this release)
 
 - Stella can only approve or abort at the checkpoint (no "approve with changes").
 - The engine's mode suggestion can vary between runs.
