@@ -6,7 +6,7 @@ Copyright 2026 Christian Gonzales Komiya
 
 A demo that applies the Vegapunk pattern, a **Multi-Agent Architecture Pattern (and Conceptual Framework)**, to validating a startup idea: six biased specialists share one memory and a human decides.
 
-**Status:** Defined (Phase 2); first run with flavor 01 pending.
+**Status:** Tested with flavor 01 (Claude Code) in full mode; see [What to expect](#what-to-expect).
 
 ## The sample idea
 
@@ -39,6 +39,14 @@ Search differs per flavor: flavor 01 uses Claude Code's built-in web search; fla
 - York's operations record (type ops_log, in Punk Records, not a file) confirms that validation-report.md and experiment-plan.md exist and have every required section, and lists any other file left in ./startup-validator-output/ as extra.
 - The verdict's reasoning cites findings and addresses every blocking critique.
 
+## What to expect
+
+- **Why 3 iterations:** in full mode Lilith often blocks the first revisions. In one of our three runs with 2 iterations, Shaka rejected the plan at the iteration limit because a blocking critique was still open; in a fourth run with 3 iterations the third critique was resolved and the run reached execution. Three iterations gives more headroom, at a small extra cost.
+- **Atlas may stop and ask for a decision:** if the approved plan defers verification checks (prices, legal rules) to the founder, Atlas can refuse to write the files, because it has no web tools. The engine will pause and ask you. A note like "The checks in the plan are founder steps, not preconditions for writing. Write both files now and mark every unverified figure as an estimate, saying what it rests on." unblocks it.
+- **York's verdict:** York verifies structure and consistency against the approved plan (sections present, exactly two files, additions not in the plan). It does not verify facts on the web.
+- **Empty output folder:** before each run, `./startup-validator-output/` must be empty. The engine will stop and ask if old files are there.
+- **Deliverables:** in our runs the result was a low-confidence pivot recommendation and a 3-experiment plan. The facts the satellites could not verify are labelled "Unverified" or "Estimate" in the report.
+
 ## Running it on your own idea
 
 Fill in the goal block of `mission-template.md`, paste it into the engine as written, and give the settings listed there.
@@ -46,7 +54,7 @@ Mission folders (`.vegapunk/`) and `./startup-validator-output/` stay local if y
 
 ## Cost
 
-To be measured on the first run.
+A complete run with the flavor 01 engine cost about US$2.3 at API prices in our last run; it varies between runs, and Light and Standard modes cost less. The measurement method and the Light and Standard figures are in the [flavor 01 README](../../flavors/01-claude-code/README.md#usage-and-cost); the full-mode figure is not published there yet and will be added with the flavor.
 
 ## Relationship to the framework
 

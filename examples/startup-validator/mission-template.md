@@ -28,6 +28,6 @@ Done-criteria:
 
 ## Settings (not part of the goal; tell these to Stella's engine)
 
-- Mode full; max_iterations 2; search limit 6; draft limit 500 words.
+- Mode full; max_iterations 3; search limit 6; draft limit 500 words.
 - Approval before execution is mandatory in full mode.
 - In flavor 01: paste the goal block as written and say "search limit 6, draft limit 500".
