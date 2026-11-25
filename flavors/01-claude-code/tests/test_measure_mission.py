@@ -298,6 +298,21 @@ class MeasureTests(unittest.TestCase):
         s = Fixture(self.root, events=events, state={"iteration": 0}).measure()["summary"]
         self.assertEqual((s["status"], s["total_seconds"]), ("incomplete", 120.0))
 
+    def test_incomplete_after_a_refusal_pause(self):
+        sat = "punk-01-shaka"
+        events = default_events()[:4] + [  # up to satellite_idle at 10:01:00
+            event(5, "10:01:05", "hitl_requested", "system",
+                  {"kind": "refusal", "reason": "missing_input", "record_id": "r-001"}),
+            event(6, "10:01:50", "hitl_resolved", "stella", {"decision": "incomplete"}),
+            event(7, "10:01:50", "phase_changed", "system", {"from": "RESEARCH", "to": "INCOMPLETE"}),
+            event(8, "10:02:00", "mission_incomplete", "system", {"reason": f"{sat} refused the work."}),
+        ]
+        # no state.status: the status has to come from the terminal event
+        s = Fixture(self.root, events=events, state={"iteration": 0}).measure()["summary"]
+        self.assertEqual(s["status"], "incomplete")
+        self.assertEqual((s["satellite_work_seconds"], s["hitl_wait_seconds"], s["total_seconds"]),
+                         (60.0, 45.0, 120.0))
+
     # helpers
     @staticmethod
     def _call(u, model=SONNET):
