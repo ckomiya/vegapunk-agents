@@ -62,7 +62,9 @@
                 "minimum": 1,
                 "description": "Research round being entered, when 'to' is RESEARCH."
               }
-            }
+            },
+            "if": { "properties": { "to": { "const": "RESEARCH" } }, "required": ["to"] },
+            "then": { "required": ["research_round"] }
           }
         }
       }

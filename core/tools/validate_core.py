@@ -225,6 +225,12 @@ def check_negatives(pv, ev, doc, events):
     del e["payload"]["to"]
     cases.append(("phase_changed without 'to'", ev, e))
 
+    e = copy.deepcopy(
+        next(x for x in events if x["type"] == "phase_changed" and x["payload"]["to"] == "RESEARCH")
+    )
+    del e["payload"]["research_round"]
+    cases.append(("phase_changed to RESEARCH without research_round", ev, e))
+
     d = copy.deepcopy(doc)
     del d["records"][idx("critique")]["blocking"]
     cases.append(("critique without blocking", pv, d))
