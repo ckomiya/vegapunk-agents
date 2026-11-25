@@ -11,7 +11,7 @@ A flavor builds the prompt for a satellite by concatenating, in this order:
 
 1. [`_shared-protocol.md`](_shared-protocol.md): the pattern, the communication rule and the output contract.
 2. The satellite file, for example `punk-02-lilith.md`: identity, bias, counterweight, responsibilities, reads, writes, rules.
-3. The runtime context: mission (goal, mode, roster, constraints, max_iterations), state (phase, iteration) and the records relevant to the satellite.
+3. The runtime context: mission (goal, mode, roster, constraints, max_iterations, research_rounds), state (phase, iteration, research_round) and the records relevant to the satellite.
 
 The seven role files (`stella` and the six satellites) start with `---` on line 1: a YAML front matter block (`id`, `name`, `role`, `cognitive_bias`, `reads`, `writes`, `active_phases`) whose first lines are the SPDX/copyright header as YAML comments. The front matter values match the components table in `architecture.md` exactly. Markdown files without front matter (this README and `_shared-protocol.md`) carry the header as an HTML comment instead.
 
