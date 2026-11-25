@@ -2408,6 +2408,101 @@ class FlagReportTests(OpsBase):
         self.assert_artifact_reported()
 
 
+class ReasonFileTests(OpsBase):
+    TEXT = "  It's \"done\" $HOME `x`.\n\nSecond paragraph.  \n"
+    COMMANDS = {"abort": ("abort",), "incomplete": ("decide", "--decision", "incomplete")}
+
+    def reason_file(self, data):
+        path = Path(self._tmp.name) / "reason.txt"
+        path.write_bytes(data)
+        return str(path)
+
+    def pause(self, name="mission"):
+        self.dir = Path(self._tmp.name) / name
+        self.init("light")
+        self.refuse()
+
+    def test_reason_file_drops_only_the_final_line_break(self):
+        events_by_command = {"abort": "mission_aborted", "incomplete": "mission_incomplete"}
+        for name, command in self.COMMANDS.items():
+            for number, ending in enumerate(("\n", "\r\n")):
+                with self.subTest(command=name, ending=ending):
+                    self.pause(f"{name}-{number}")
+                    path = self.reason_file((self.TEXT + ending).encode("utf-8"))
+                    code, out = self.run_cli(*command, "--reason-file", path)
+                    self.assertEqual(code, 0, out)
+                    _, events = self.assert_valid()
+                    self.assertEqual((events[-1]["type"], events[-1]["payload"]["reason"]),
+                                     (events_by_command[name], self.TEXT))
+
+    def test_exactly_one_of_reason_and_reason_file(self):
+        self.pause()
+        path = self.reason_file(b"r\n")
+        usage = "invalid arguments (see --help)"
+        self.assert_cli_rejects(self.COMMANDS["abort"], usage)
+        self.assert_cli_rejects(self.COMMANDS["incomplete"], "incomplete requires a non-empty --reason")
+        for command in self.COMMANDS.values():
+            self.assert_cli_rejects((*command, "--reason", "r", "--reason-file", path), usage)
+
+    def test_unreadable_or_blank_reason_file_is_rejected(self):
+        self.pause()
+        absent = str(Path(self._tmp.name) / "absent.txt")
+        for name, command in self.COMMANDS.items():
+            for data in (None, b"\xff\xfe\xff"):
+                with self.subTest(command=name, data=data):
+                    path = absent if data is None else self.reason_file(data)
+                    before = self.snapshot()
+                    code, out = self.run_cli(*command, "--reason-file", path)
+                    self.assertNotEqual(code, 0, out)
+                    self.assertTrue(out["errors"][0].startswith(f"cannot read reason from {path}: "), out)
+                    self.assertEqual(self.snapshot(), before)
+            with self.subTest(command=name, data="blank"):
+                self.assert_cli_rejects((*command, "--reason-file", self.reason_file(b" \n\t \n")),
+                                        f"{name} requires a non-empty --reason-file")
+
+    def test_reason_file_needs_the_incomplete_decision(self):
+        self.pause()
+        path = self.reason_file(b"r")
+        self.assert_cli_rejects(("decide", "--decision", "reactivate", "--note", "n", "--reason-file", path),
+                                "--reason-file is only valid with --decision incomplete")
+        self.dir = Path(self._tmp.name) / "ops"
+        self.to_operations()
+        self.not_ready()
+        self.assert_cli_rejects(("decide", "--decision", "close", "--reason-file", path),
+                                "--reason-file is only valid with --decision incomplete")
+
+
+class ReportReasonTests(RefusalBase):
+    def report_reason(self):
+        code, out = self.run_cli("report")
+        self.assertEqual(code, 0, out)
+        return out["status"], out["reason"]
+
+    def test_completed_has_no_reason(self):
+        self.init("light")
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        self.assertEqual(self.report_reason(), ("completed", None))
+
+    def test_pause_has_no_reason_and_incomplete_has_it(self):
+        self.init("light")
+        self.refuse()
+        self.assertEqual(self.report_reason(), ("active", None))
+        self.incomplete("Not all of it.\nSecond line.")
+        self.assertEqual(self.report_reason(), ("incomplete", "Not all of it.\nSecond line."))
+
+    def test_failed_has_the_reason(self):
+        self.init("light")
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", verdict="REJECTED"))
+        self.assertEqual(self.report_reason(), ("failed", "Verdict REJECTED (r-003)"))
+
+    def test_aborted_has_the_reason(self):
+        self.init("light")
+        self.run_cli("abort", "--reason", "Changed my mind")
+        self.assertEqual(self.report_reason(), ("aborted", "Changed my mind"))
+
+
 class FullMissionWithRoundsAndFlagsTests(RefusalBase):
     def test_two_rounds_a_dismissed_flag_and_a_reactivation(self):
         self.init("full", "--research-rounds", "2")

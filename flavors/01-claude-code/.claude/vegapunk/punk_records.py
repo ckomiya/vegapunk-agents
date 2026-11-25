@@ -852,6 +852,13 @@ def read_note_file(source: str, kind: str = "note") -> str:
     return text[:-1] if text.endswith("\n") else text
 
 
+def read_reason(args) -> str | None:
+    """The reason given by --reason or --reason-file (argparse allows at most one)."""
+    if args.reason_file is None:
+        return args.reason
+    return read_note_file(args.reason_file, "reason")
+
+
 def write_stella_record(args, rtype: str) -> dict:
     """Record a standalone note or flag of stella (no phase change)."""
     m, records_schema, event_schema = load_mission(resolve_dir(args))
@@ -916,8 +923,9 @@ def cmd_decide(args) -> dict:
         )
     if args.decision != "reactivate" and (args.note is not None or args.note_file is not None):
         raise EngineError("--note and --note-file are only valid with --decision reactivate")
-    if args.decision != "incomplete" and args.reason is not None:
-        raise EngineError("--reason is only valid with --decision incomplete")
+    for option, value in (("--reason", args.reason), ("--reason-file", args.reason_file)):
+        if args.decision != "incomplete" and value is not None:
+            raise EngineError(f"{option} is only valid with --decision incomplete")
 
     if args.decision == "reactivate":
         satellite = m.actor_for(m.phase)
@@ -936,10 +944,12 @@ def cmd_decide(args) -> dict:
         m.add_event("hitl_resolved", "stella", {"decision": "close"})
         m.go("COMPLETED")
     else:
-        if args.reason is None or not args.reason.strip():
-            raise EngineError("incomplete requires a non-empty --reason")
+        reason = read_reason(args)
+        if reason is None or not reason.strip():
+            option = "--reason" if args.reason_file is None else "--reason-file"
+            raise EngineError(f"incomplete requires a non-empty {option}")
         m.add_event("hitl_resolved", "stella", {"decision": "incomplete"})
-        m.terminate("INCOMPLETE", "mission_incomplete", args.reason)
+        m.terminate("INCOMPLETE", "mission_incomplete", reason)
 
     commit(m, records_schema, event_schema)
     return {"ok": True, "next": m.next_info(with_context=True)}
@@ -949,9 +959,12 @@ def cmd_abort(args) -> dict:
     m, records_schema, event_schema = load_mission(resolve_dir(args))
     if m.doc["state"]["status"] != "active":
         raise EngineError(f"mission is already {m.doc['state']['status']}")
+    reason = read_reason(args)
+    if args.reason_file is not None and not reason.strip():
+        raise EngineError("abort requires a non-empty --reason-file")
     if m.pending_pause():
         m.add_event("hitl_resolved", "stella", {"decision": "aborted"})
-    m.terminate("ABORTED", "mission_aborted", args.reason)
+    m.terminate("ABORTED", "mission_aborted", reason)
     commit(m, records_schema, event_schema)
     return {"ok": True, "next": m.next_info()}
 
@@ -1050,14 +1063,17 @@ def cmd_report(args) -> dict:
             f"### {r['id']} — {r['author']} (flag)\n\n- Refs: {', '.join(r['refs'])}\n\n{r['content']}\n"
             for r in late_flags
         ]
-    if status != "completed":
-        reasons = [
+    # None for a completed or paused mission: neither has one of these events.
+    reason = next(
+        (
             e["payload"].get("reason")
-            for e in m.events
+            for e in reversed(m.events)
             if e["type"] in ("mission_incomplete", "mission_failed", "mission_aborted")
-        ]
-        if reasons and reasons[-1]:
-            parts.append(f"## Recorded reason\n\n{reasons[-1]}\n")
+        ),
+        None,
+    )
+    if reason:
+        parts.append(f"## Recorded reason\n\n{reason}\n")
     path = directory / DELIVERABLE_FILE
     try:
         atomic_write_all({path: "\n".join(parts).encode("utf-8")})
@@ -1067,6 +1083,7 @@ def cmd_report(args) -> dict:
         "ok": True,
         "path": str(path),
         "status": status,
+        "reason": reason,
         "iteration": m.iteration,
         "record_ids": [r["id"] for r in chosen]
         + ([ops_log["id"]] if ops_log else [])
@@ -1325,11 +1342,17 @@ def build_parser() -> argparse.ArgumentParser:
     src = p.add_mutually_exclusive_group()
     src.add_argument("--note", help="reactivate: what was missing or how to proceed, recorded as given")
     src.add_argument("--note-file", metavar="FILE", help="reactivate: file holding the note text")
-    p.add_argument("--reason", help="incomplete: why the mission ends here")
+    why = p.add_mutually_exclusive_group()
+    why.add_argument("--reason", help="incomplete: why the mission ends here")
+    why.add_argument("--reason-file", metavar="FILE",
+                     help="incomplete: file holding the reason (final line break dropped)")
     p.set_defaults(func=cmd_decide)
 
     p = sub.add_parser("abort", parents=[common], help="Stella aborts the mission")
-    p.add_argument("--reason", required=True)
+    why = p.add_mutually_exclusive_group(required=True)
+    why.add_argument("--reason", help="why the mission is cancelled")
+    why.add_argument("--reason-file", metavar="FILE",
+                     help="file holding the reason (final line break dropped)")
     p.set_defaults(func=cmd_abort)
 
     p = sub.add_parser("fail", parents=[common], help="mark an unrecoverable failure")

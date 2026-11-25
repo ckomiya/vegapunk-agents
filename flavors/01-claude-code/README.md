@@ -80,8 +80,10 @@ It waits for an explicit confirmation before `init`. Then:
 | Pause (`next.kind`) | Raised when | Stella's decisions | Script command |
 |---|---|---|---|
 | `approval` | The mission reaches `HITL_APPROVAL` | approve, abort | `approve`, `abort` |
-| `refusal` | A satellite declines its task | reactivate (with her note, once per entry into a phase), incomplete, abort | `decide --decision reactivate --note-file <file>`, `decide --decision incomplete --reason <text>`, `abort` |
-| `ops_not_ready` | York's `ops_log` says the mission is not ready to close | close, incomplete, abort | `decide --decision close`, `decide --decision incomplete --reason <text>`, `abort` |
+| `refusal` | A satellite declines its task | reactivate (with her note, once per entry into a phase), incomplete, abort | `decide --decision reactivate --note-file <file>`, `decide --decision incomplete --reason-file <file>`, `abort` |
+| `ops_not_ready` | York's `ops_log` says the mission is not ready to close | close, incomplete, abort | `decide --decision close`, `decide --decision incomplete --reason-file <file>`, `abort` |
+
+`abort` and `decide --decision incomplete` take Stella's reason as `--reason-file <file>` (UTF-8, final line break dropped; what the engine uses) or as `--reason <text>`, never both.
 
 A flag is written with `flag --refs <id> [<id> ...] --text-file <file>`. A mission ends as `completed`, `incomplete` (work was done but the goal was not fully met; only Stella decides it), `failed` or `aborted`. The engine never decides and never retries a refused task.
 
@@ -98,6 +100,7 @@ Files in `.vegapunk/missions/<id>/`:
 | `drafts/` | Satellite JSON drafts as saved by the engine |
 | `notes/` | Stella's notes |
 | `flags/` | Stella's flags |
+| `reasons/` | Stella's reasons for `abort` and `incomplete` |
 | `deliverable.md` | The final report: deliverable, verdict and, when present, the operations check, refusals, undecided flags and recorded reason |
 | `measurement/` | Output of `measure_mission.py` |
 
@@ -216,7 +219,6 @@ A model that breaks the draft contract fails visibly: `punk_records.py` rejects 
 
 - Core 0.3.0 has not been validated with real runs yet.
 - Stella can only approve or abort at the checkpoint (no "approve with changes").
-- `--reason` has no file form: the engine passes Stella's reason on the command line.
 - The engine's mode suggestion can vary between runs.
 - On some Claude Code versions subagents show as "Backgrounded agent" even though the skill asks for the foreground (the engine still waits for each one).
 - The engine rewrites each draft to save it, so its output is paid twice.

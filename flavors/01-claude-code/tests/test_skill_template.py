@@ -38,7 +38,7 @@ class SkillTemplateTests(unittest.TestCase):
         assert marker, "coordinator section not found"
 
     def test_mentions_the_0_3_cycle(self):
-        for term in ("`decide", "`--research-rounds`", "`flag", "`ops_not_ready`", "`refusal`", "`incomplete`"):
+        for term in ("`decide", "`--research-rounds`", "`flag", "`ops_not_ready`", "`refusal`", "`incomplete`", "--reason-file"):
             with self.subTest(term=term):
                 self.assertIn(term, self.engine)
 
