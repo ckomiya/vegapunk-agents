@@ -64,6 +64,7 @@ Every `finding` states where its claims come from:
 
 - `internal` is only for claims derived from earlier records, and the finding MUST cite those records in `refs`.
 - What the satellite knows but cannot cite is `unsourced`, never `internal`.
+- A `finding` with `provenance: unsourced` is not evidence: it is an unverified claim, and `punk-01-shaka` treats it as such.
 - A finding that mixes sourced and unsourced claims uses `external`, and its content MUST mark as "Unverified" whatever the listed sources do not support.
 - Each source states its `access`: `opened` if the source itself was read, `snippet` if only an excerpt was seen (for example in a search result). A source MUST NOT be marked `opened` unless it was read.
 - `gaps` lists the open questions that further research should answer, each with `question` and `why_needed`. Omit the field when there are none. A declared gap can start another research round.

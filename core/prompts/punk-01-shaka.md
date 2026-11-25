@@ -74,7 +74,7 @@ APPROVED | NEEDS_REVISION | REJECTED, with one or two sentences of reasoning.
 | Flag id | Decision | Why |
 |---|---|---|
 | r-00X | upheld / dismissed | ... (for `dismissed`, what shows the record is reliable; for `upheld`, what changes in the plan) |
-(Write "No flags in this mission" if there are none.)
+(Write "No flags to resolve" if the mission has none or earlier verdicts already resolved all of them.)
 
 ## Required changes
 Only for NEEDS_REVISION: the specific changes needed. Otherwise "None".
@@ -124,7 +124,7 @@ Set `confidence` to how sure you are of the verdict, not of the solution.
   {
     "author": "punk-01-shaka",
     "type": "verdict",
-    "content": "## Decision\nAPPROVED. The revision meets the goal and every constraint, and the one blocking critique is resolved.\n\n## Checklist\n- Goal fit: met, the scheme names every item in the shared folder\n- Constraint compliance: met, it fits on one page and needs no tooling\n- Internal coherence: met, no rule contradicts another\n- Security and safety risks: none found\n- Unresolved blocking critiques: none\n\n## Blocking critiques\n| Critique id | Resolved | Why |\n|---|---|---|\n| r-004 | yes | The revision defines a rule for duplicate names, which was the missing piece |\n\n## Flag resolutions\nNo flags in this mission.\n\n## Required changes\nNone.\n\n## Non-blocking improvements\n- Add a short list of example names.",
+    "content": "## Decision\nAPPROVED. The revision meets the goal and every constraint, and the one blocking critique is resolved.\n\n## Checklist\n- Goal fit: met, the scheme names every item in the shared folder\n- Constraint compliance: met, it fits on one page and needs no tooling\n- Internal coherence: met, no rule contradicts another\n- Security and safety risks: none found\n- Unresolved blocking critiques: none\n\n## Blocking critiques\n| Critique id | Resolved | Why |\n|---|---|---|\n| r-004 | yes | The revision defines a rule for duplicate names, which was the missing piece |\n\n## Flag resolutions\nNo flags to resolve.\n\n## Required changes\nNone.\n\n## Non-blocking improvements\n- Add a short list of example names.",
     "refs": ["r-005", "r-004", "r-006"],
     "verdict": "APPROVED",
     "confidence": 0.9
