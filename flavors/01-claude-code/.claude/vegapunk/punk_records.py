@@ -615,17 +615,44 @@ def finding_errors(tag: str, d: dict) -> list[str]:
     return errors
 
 
-def flag_resolution_errors(tag: str, value, flag_ids: set[str]) -> list[str]:
+def flag_resolvers(records: list[dict]) -> dict[str, str]:
+    """{flag id: id of the verdict that resolved it}."""
+    return {
+        item["flag"]: r["id"]
+        for r in records
+        if r["type"] == "verdict"
+        for item in r.get("flag_resolutions", [])
+    }
+
+
+def flag_resolution_errors(tag: str, value, flag_ids: set[str], resolvers: dict[str, str]) -> list[str]:
     errors, items = _object_list_errors(tag, "flag_resolutions", value, ("flag", "decision"))
     if value == []:
         errors.append(f"{tag}: 'flag_resolutions' must not be empty; omit it when there is nothing to resolve")
+    listed = set()
     for label, item in items:
         flag = item.get("flag")
         if not isinstance(flag, str) or flag not in flag_ids:
             errors.append(f"{label}: 'flag' {flag!r} is not the id of an existing flag record")
+        elif flag in listed:
+            errors.append(f"{label}: flag {flag!r} is listed more than once")
+        elif flag in resolvers:
+            errors.append(f"{label}: flag {flag!r} was already resolved by verdict {resolvers[flag]!r}")
+        else:
+            listed.add(flag)
         if item.get("decision") not in FLAG_DECISIONS:
             errors.append(f"{label} requires 'decision' upheld or dismissed")
     return errors
+
+
+def unresolved_flag_errors(tag: str, value, pending: list[str]) -> list[str]:
+    """The verdict gate: every pending flag must be named in flag_resolutions."""
+    items = value if isinstance(value, list) else []
+    named = [item.get("flag") for item in items if isinstance(item, dict)]
+    missing = [rid for rid in pending if rid not in named]
+    if not missing:
+        return []
+    return [f"{tag}: a verdict must resolve every earlier flag in 'flag_resolutions'; missing: {', '.join(missing)}"]
 
 
 def validate_drafts(m: Mission, text: str) -> list[dict]:
@@ -646,7 +673,10 @@ def validate_drafts(m: Mission, text: str) -> list[dict]:
     errors = []
     produced = PHASE_PRODUCES[phase]
     ids = {r["id"] for r in m.doc["records"]}
-    flag_ids = {r["id"] for r in m.doc["records"] if r["type"] == "flag"}
+    flags = [r["id"] for r in m.doc["records"] if r["type"] == "flag"]
+    flag_ids = set(flags)
+    resolvers = flag_resolvers(m.doc["records"])
+    pending_flags = [rid for rid in flags if rid not in resolvers]
     counts: dict[str, int] = {}
     for i, d in enumerate(drafts):
         tag = f"draft[{i}]"
@@ -721,8 +751,17 @@ def validate_drafts(m: Mission, text: str) -> list[dict]:
             errors.append(f"{tag}: a flag requires at least one id in 'refs'")
         if rtype == "ops_log" and not isinstance(d.get("ready_to_close"), bool):
             errors.append(f"{tag}: an ops_log requires boolean 'ready_to_close'")
-        if rtype == "verdict" and "flag_resolutions" in d:
-            errors += flag_resolution_errors(tag, d["flag_resolutions"], flag_ids)
+        if rtype == "verdict":
+            if "flag_resolutions" in d:
+                errors += flag_resolution_errors(tag, d["flag_resolutions"], flag_ids, resolvers)
+            errors += unresolved_flag_errors(tag, d.get("flag_resolutions"), pending_flags)
+
+    # A flag placed before the verdict would be an earlier flag that the verdict cannot name.
+    types = [d.get("type") if isinstance(d, dict) else None for d in drafts]
+    if "verdict" in types:
+        for i, rtype in enumerate(types[: types.index("verdict")]):
+            if rtype == "flag":
+                errors.append(f"draft[{i}]: a flag written with a verdict must come after the verdict")
 
     refusals = counts.get("refusal", 0)
     if refusals > 1:
@@ -769,6 +808,12 @@ def cmd_append(args) -> dict:
                 "record_id": not_ready["id"],
             },
         )
+    elif (
+        phase == "RESEARCH"
+        and m.doc["state"]["research_round"] < m.doc["mission"]["research_rounds"]
+        and any(r.get("gaps") for r in written)  # only the findings of this append
+    ):
+        m.go("RESEARCH")  # a new entry; state.iteration is not touched
     elif phase == "CRITIQUE":
         revise = (
             main_rec["blocking"]
@@ -794,35 +839,44 @@ def cmd_append(args) -> dict:
     return {"ok": True, "records": [r["id"] for r in written], "next": m.next_info(with_context=True)}
 
 
-def read_note_file(source: str) -> str:
+def read_note_file(source: str, kind: str = "note") -> str:
     try:
         text = Path(source).read_bytes().decode("utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        raise EngineError(f"cannot read note from {source}: {exc}") from None
+        raise EngineError(f"cannot read {kind} from {source}: {exc}") from None
     if text.endswith("\r\n"):  # drop only the final line break of the file
         return text[:-2]
     return text[:-1] if text.endswith("\n") else text
 
 
-def cmd_note(args) -> dict:
+def write_stella_record(args, rtype: str) -> dict:
+    """Record a standalone note or flag of stella (no phase change)."""
     m, records_schema, event_schema = load_mission(resolve_dir(args))
     status = m.doc["state"]["status"]
     if status != "active":
-        raise EngineError(f"mission is {status}; notes can no longer be recorded")
+        raise EngineError(f"mission is {status}; {rtype}s can no longer be recorded")
     pause = m.pending_pause()
-    if pause and pause["kind"] != "approval":  # at the other pauses the note travels with the decision
+    if pause and pause["kind"] != "approval":  # at the other pauses only the decision is valid
         m.require_no_pause()
-    text = args.text if args.text is not None else read_note_file(args.text_file)
+    text = args.text if args.text is not None else read_note_file(args.text_file, rtype)
     if not text.strip():
-        raise EngineError("note text must not be empty")
+        raise EngineError(f"{rtype} text must not be empty")
     refs = list(args.refs or [])
     ids = {r["id"] for r in m.doc["records"]}
     missing = [rid for rid in refs if rid not in ids]
     if missing:
         raise EngineError([f"ref {rid!r} does not exist" for rid in missing])
-    m.add_record("stella", "note", text, refs, {})
+    m.add_record("stella", rtype, text, refs, {})
     commit(m, records_schema, event_schema)
     return {"ok": True, "record_id": m.doc["records"][-1]["id"], "next": m.next_info(with_context=True)}
+
+
+def cmd_note(args) -> dict:
+    return write_stella_record(args, "note")
+
+
+def cmd_flag(args) -> dict:
+    return write_stella_record(args, "flag")
 
 
 def cmd_approve(args) -> dict:
@@ -962,13 +1016,19 @@ def cmd_report(args) -> dict:
                 if r["type"] in ("proposal", "revision"):
                     chosen = [r]
                     break
+    unfinished = paused or status == "incomplete"
+    if unfinished:  # what was produced so far helps stella decide
+        chosen = [r for r in records if r["type"] == "artifact"]
     if verdict:
         chosen.append(verdict)
-    if paused or status == "incomplete":
+    if unfinished:
         chosen += [r for r in records if r["type"] == "refusal"]
     # The latest "not ready" ops_log if there is one, so a later "ready" one never hides it.
     not_ready = [r for r in records if r["type"] == "ops_log" and not r["ready_to_close"]]
     ops_log = not_ready[-1] if not_ready else m.last_record("ops_log")
+    # Flags no verdict decided: those after the last verdict (all of them if there is none).
+    after = records.index(verdict) + 1 if verdict else 0
+    late_flags = [r for r in records[after:] if r["type"] == "flag"]
 
     suffix = f" (paused: {pause['kind']})" if paused else ""
     parts = [
@@ -979,6 +1039,12 @@ def cmd_report(args) -> dict:
         parts.append(f"## {r['id']} — {r['author']} ({r['type']})\n\n{r['content']}\n")
     if ops_log:
         parts.append(f"## Operations check (punk-06-york)\n\n{ops_log['content']}\n")
+    if late_flags:
+        parts.append("## Flags without a verdict decision\n")
+        parts += [
+            f"### {r['id']} — {r['author']} (flag)\n\n- Refs: {', '.join(r['refs'])}\n\n{r['content']}\n"
+            for r in late_flags
+        ]
     if status != "completed":
         reasons = [
             e["payload"].get("reason")
@@ -997,7 +1063,9 @@ def cmd_report(args) -> dict:
         "path": str(path),
         "status": status,
         "iteration": m.iteration,
-        "record_ids": [r["id"] for r in chosen] + ([ops_log["id"]] if ops_log else []),
+        "record_ids": [r["id"] for r in chosen]
+        + ([ops_log["id"]] if ops_log else [])
+        + [r["id"] for r in late_flags],
         "passed_hitl": any(
             e["type"] == "phase_changed" and e["payload"]["to"] == "HITL_APPROVAL" for e in m.events
         ),
@@ -1100,11 +1168,13 @@ def select_context(m: Mission, satellite: str, full: bool, include: list[str]) -
             if r["id"] not in readable:
                 continue
             if (
-                r["type"] in ("goal", "finding")
+                r["type"] in ("goal", "finding", "flag")
                 or r["iteration"] >= floor
                 or (satellite == "punk-01-shaka" and r["type"] == "critique" and r.get("blocking") is True)
             ):
                 chosen.add(r["id"])
+        # The verdicts that resolved flags, for the satellites that read verdicts.
+        chosen.update(vid for vid in flag_resolvers(records).values() if vid in readable)
         for rid in list(chosen):  # one level of refs, from the records chosen above
             chosen.update(ref for ref in by_id[rid]["refs"] if ref in readable)
     return [r for r in records if r["id"] in chosen], len(readable)
@@ -1233,6 +1303,13 @@ def build_parser() -> argparse.ArgumentParser:
     src.add_argument("--text-file", help="file holding the note text (final line break dropped)")
     p.add_argument("--refs", nargs="+", action="extend", metavar="ID", help="records the note refers to")
     p.set_defaults(func=cmd_note)
+
+    p = sub.add_parser("flag", parents=[common], help="record Stella's flag on suspect records")
+    src = p.add_mutually_exclusive_group(required=True)
+    src.add_argument("--text", help="why the records are suspect, recorded as given")
+    src.add_argument("--text-file", help="file holding the flag text (final line break dropped)")
+    p.add_argument("--refs", nargs="+", action="extend", required=True, metavar="ID", help="the suspect records")
+    p.set_defaults(func=cmd_flag)
 
     p = sub.add_parser("approve", parents=[common], help="Stella approves at HITL_APPROVAL")
     p.add_argument("--note")

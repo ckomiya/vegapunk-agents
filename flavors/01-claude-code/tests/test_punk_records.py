@@ -1169,16 +1169,80 @@ class ResearchRoundTests(Base):
             self.assertTrue(any("--research-rounds" in e for e in out["errors"]), out)
             self.assertFalse(self.dir.exists())
 
-    def test_entering_research_counts_the_round_once(self):
-        self.init("standard", "--research-rounds", "3")
+    GAP = {"question": "Q?", "why_needed": "W."}
+    ENTRY_1 = {"from": "DEFINED", "to": "RESEARCH", "research_round": 1}
+    ENTRY_2 = {"from": "RESEARCH", "to": "RESEARCH", "research_round": 2}
+
+    def research(self, *extra_drafts, **finding):
+        return self.append(draft("punk-04-pythagoras", "finding", **finding), *extra_drafts)
+
+    def refuse(self):
+        return self.append(draft("punk-04-pythagoras", "refusal", reason="missing_input"))["next"]
+
+    def reactivate(self):
+        code, out = self.run_cli("decide", "--decision", "reactivate", "--note", "Try this.")
+        self.assertEqual(code, 0, out)
+
+    def test_gaps_repeat_research_while_rounds_remain(self):
+        self.init("standard", "--research-rounds", "2")
         self.assertEqual(self.doc()["state"]["research_round"], 1)
-        self.assertEqual(self.entries(), [{"from": "DEFINED", "to": "RESEARCH", "research_round": 1}])
-        gap = {"question": "Q?", "why_needed": "W."}
-        out = self.append(draft("punk-04-pythagoras", "finding", gaps=[gap]))
-        self.assertEqual(out["next"]["phase"], "IDEATION")  # no repeated rounds yet
-        doc, _ = self.assert_valid()
-        self.assertEqual(doc["state"]["research_round"], 1)
-        self.assertEqual(len(self.entries()), 1)
+        self.assertEqual(self.entries(), [self.ENTRY_1])
+        start = len(self.events())
+        out = self.research(gaps=[self.GAP])
+        self.assertEqual((out["next"]["phase"], out["next"]["actor"], out["next"]["action"]),
+                         ("RESEARCH", "punk-04-pythagoras", "invoke_satellite"))
+        doc, events = self.assert_valid()
+        self.assertEqual([(e["type"], e["actor"], e["payload"]) for e in events[start:]], [
+            ("record_written", "punk-04-pythagoras", {"record_id": "r-002", "record_type": "finding"}),
+            ("satellite_idle", "punk-04-pythagoras", {"phase": "RESEARCH"}),
+            ("phase_changed", "system", self.ENTRY_2),
+            ("satellite_activated", "punk-04-pythagoras", {"phase": "RESEARCH"}),
+        ])
+        self.assertEqual((doc["state"]["research_round"], doc["state"]["iteration"]), (2, 0))
+        ctx = ctx_of(out["next"])
+        self.assertEqual(ctx["state"], {"phase": "RESEARCH", "iteration": 0, "research_round": 2})
+        self.assertEqual(ctx["records"][-1], doc["records"][-1])  # the earlier finding and its gaps
+
+    def test_no_gaps_do_not_repeat_research(self):
+        self.init("standard", "--research-rounds", "2")
+        self.assertEqual(self.research()["next"]["phase"], "IDEATION")
+        self.assertEqual(self.entries(), [self.ENTRY_1])
+        self.assert_valid()
+
+    def test_a_single_round_is_never_repeated(self):
+        self.init("standard")  # research_rounds 1
+        self.assertEqual(self.research(gaps=[self.GAP])["next"]["phase"], "IDEATION")
+        self.assertEqual(self.doc()["state"]["research_round"], 1)
+        self.assertEqual(self.entries(), [self.ENTRY_1])
+        self.assert_valid()
+
+    def test_the_last_available_round_is_not_repeated(self):
+        self.init("standard", "--research-rounds", "2")
+        self.research(gaps=[self.GAP])
+        self.assertEqual(self.research(gaps=[self.GAP])["next"]["phase"], "IDEATION")
+        self.assertEqual(self.entries(), [self.ENTRY_1, self.ENTRY_2])
+        self.assert_valid()
+
+    def test_only_the_findings_of_this_append_count(self):
+        self.init("standard", "--research-rounds", "3")
+        self.research(gaps=[self.GAP])
+        self.assertEqual(self.research()["next"]["phase"], "IDEATION")  # the old gaps do not count
+        self.assertEqual(self.entries(), [self.ENTRY_1, self.ENTRY_2])
+
+    def test_one_finding_with_gaps_among_several_repeats_research(self):
+        self.init("standard", "--research-rounds", "2")
+        out = self.research(draft("punk-04-pythagoras", "finding", gaps=[self.GAP]))
+        self.assertEqual(out["next"]["phase"], "RESEARCH")
+
+    def test_a_new_round_restores_the_reactivation(self):
+        self.init("standard", "--research-rounds", "2")
+        self.refuse()
+        self.reactivate()
+        self.assertEqual(self.research(gaps=[self.GAP])["next"]["phase"], "RESEARCH")
+        self.assertEqual(self.refuse()["decisions"], ["reactivate", "incomplete", "abort"])
+        self.reactivate()
+        self.assertEqual(self.refuse()["decisions"], ["incomplete", "abort"])
+        self.assert_valid()
 
     def test_skipped_research_keeps_round_0(self):
         self.init("light")
@@ -1272,6 +1336,7 @@ class SchemaVersionTests(Base):
         ("context", "--write"),
         ("append", "--draft-file", "-"),
         ("note", "--text", "x"),
+        ("flag", "--refs", "r-001", "--text", "x"),
         ("approve",),
         ("decide", "--decision", "reactivate", "--note", "x"),
         ("abort", "--reason", "x"),
@@ -2027,6 +2092,343 @@ class OpsNotReadyFlowTests(OpsBase):
             ("phase_changed", "system", "COMPLETED"),
             ("mission_completed", "system", None),
         ])
+
+
+def resolutions(*flag_ids, decision="dismissed"):
+    return [{"flag": rid, "decision": decision} for rid in flag_ids]
+
+
+class VerdictGateTests(Base):
+    MISSING = "draft[0]: a verdict must resolve every earlier flag in 'flag_resolutions'; missing: {}"
+
+    def flagged(self, name="mission"):
+        """Light mission at VERDICT: r-002 and r-004 flags, r-003 proposal."""
+        self.dir = Path(self._tmp.name) / name
+        self.init("light")
+        self.append(draft("punk-03-edison", "flag", refs=["r-001"]), draft("punk-03-edison", "proposal"),
+                    draft("punk-03-edison", "flag", refs=["r-001"]))
+        self.assertEqual([r["type"] for r in self.doc()["records"]], ["goal", "flag", "proposal", "flag"])
+
+    def verdict(self, value="APPROVED", resolved=None):
+        extra = {} if resolved is None else {"flag_resolutions": resolved}
+        return draft("punk-01-shaka", "verdict", verdict=value, **extra)
+
+    def errors(self, *drafts):
+        return self.append_error(json.dumps(list(drafts)))
+
+    def test_every_pending_flag_must_be_resolved(self):
+        self.flagged()
+        for value in ("APPROVED", "NEEDS_REVISION", "REJECTED"):
+            with self.subTest(value=value):
+                self.assertEqual(self.errors(self.verdict(value)), [self.MISSING.format("r-002, r-004")])
+                self.assertEqual(self.errors(self.verdict(value, resolutions("r-004"))),
+                                 [self.MISSING.format("r-002")])
+        self.assertEqual(self.run_cli("status")[1]["phase"], "VERDICT")
+
+    def test_resolving_every_flag_is_accepted_for_each_verdict(self):
+        for value, phase in (("APPROVED", "COMPLETED"), ("NEEDS_REVISION", "REVISION"), ("REJECTED", "FAILED")):
+            with self.subTest(value=value):
+                self.flagged(f"m-{value}")
+                out = self.append(self.verdict(value, resolutions("r-002", "r-004")))
+                self.assertEqual(out["next"]["phase"], phase)
+                self.assert_valid()
+
+    def test_the_same_flag_twice_is_rejected(self):
+        self.flagged()
+        errors = self.errors(self.verdict(resolved=resolutions("r-002", "r-004", "r-002")))
+        self.assertEqual(errors, ["draft[0]: flag_resolutions[2]: flag 'r-002' is listed more than once"])
+
+    def test_a_missing_or_non_flag_id_is_rejected(self):
+        self.flagged()
+        for bad in ("r-003", "r-099"):
+            errors = self.errors(self.verdict(resolved=resolutions("r-002", "r-004", bad)))
+            self.assertEqual(
+                errors, [f"draft[0]: flag_resolutions[2]: 'flag' '{bad}' is not the id of an existing flag record"])
+
+    def test_a_flag_resolved_by_an_earlier_verdict_cannot_be_resolved_again(self):
+        self.flagged()
+        self.append(self.verdict("NEEDS_REVISION", resolutions("r-002", "r-004")))  # r-005
+        self.append(draft("punk-03-edison", "revision"))
+        errors = self.errors(self.verdict(resolved=resolutions("r-002")))
+        self.assertEqual(errors, ["draft[0]: flag_resolutions[0]: flag 'r-002' was already resolved by verdict 'r-005'"])
+        self.append(self.verdict())  # nothing pending: no flag_resolutions needed
+        self.assert_valid()
+
+    def test_only_the_flags_still_pending_are_required(self):
+        self.flagged()
+        self.append(self.verdict("NEEDS_REVISION", resolutions("r-002", "r-004")))
+        self.append(draft("punk-03-edison", "revision"), draft("punk-03-edison", "flag", refs=["r-001"]))  # r-007
+        self.assertEqual(self.errors(self.verdict()), [self.MISSING.format("r-007")])
+        self.append(self.verdict(resolved=resolutions("r-007", decision="upheld")))
+        self.assert_valid()
+
+    def test_a_flag_of_the_same_append_does_not_count(self):
+        self.init("light")
+        self.append(draft("punk-03-edison", "proposal"))
+        own_flag = draft("punk-01-shaka", "flag", refs=["r-002"])
+        errors = self.errors(self.verdict(resolved=resolutions("r-004")), own_flag)  # it has no id yet
+        self.assertEqual(
+            errors, ["draft[0]: flag_resolutions[0]: 'flag' 'r-004' is not the id of an existing flag record"])
+        self.assertEqual(self.append(self.verdict(), own_flag)["next"]["phase"], "COMPLETED")
+        self.assert_valid()
+
+    def test_a_flag_placed_before_the_verdict_is_rejected(self):
+        self.init("light")
+        self.append(draft("punk-03-edison", "proposal"))
+        errors = self.errors(draft("punk-01-shaka", "flag", refs=["r-002"]), self.verdict())
+        self.assertEqual(errors, ["draft[0]: a flag written with a verdict must come after the verdict"])
+
+    def test_a_stella_flag_blocks_a_verdict_that_ignores_it(self):
+        self.init("light")
+        self.append(draft("punk-03-edison", "proposal"))
+        code, out = self.run_cli("flag", "--refs", "r-002", "--text", "Check this.")
+        self.assertEqual(code, 0, out)
+        self.assertIn("r-003", [r["id"] for r in ctx_of(out["next"])["records"]])
+        self.assertEqual(self.errors(self.verdict()), [self.MISSING.format("r-003")])
+
+
+class FlagContextTests(Base):
+    """Old flags (iterations 0 and 1) and the verdict that resolved one, read at iteration 4."""
+    context = ContextTests.context
+    ids = ContextTests.ids
+    write_mission = ContextTests.write_mission
+    ROSTER = ["punk-01-shaka", "punk-02-lilith", "punk-03-edison", "punk-04-pythagoras",
+              "punk-05-atlas", "punk-06-york"]
+
+    def check(self, phase, satellite, expected):
+        self.dir = Path(self._tmp.name) / phase
+        self.write_mission(phase, 4, [
+            ("stella", "goal", "DEFINED", 0, [], {}),
+            ("punk-03-edison", "note", "IDEATION", 0, [], {}),      # r-002: suspect record
+            ("stella", "flag", "IDEATION", 0, ["r-002"], {}),        # r-003: resolved by r-004
+            ("punk-01-shaka", "verdict", "VERDICT", 0, [],
+             {"verdict": "NEEDS_REVISION", "flag_resolutions": resolutions("r-003")}),  # r-004
+            ("stella", "flag", "REVISION", 1, ["r-001"], {}),        # r-005: unresolved
+            ("punk-01-shaka", "verdict", "VERDICT", 1, [], {"verdict": "NEEDS_REVISION"}),  # r-006
+            ("punk-03-edison", "note", "REVISION", 1, [], {}),      # r-007: uncited and old
+        ], roster=self.ROSTER)
+        out = self.context()
+        self.assertEqual((out["satellite"], out["selection"]["mode"]), (satellite, "selective"))
+        self.assertEqual(self.ids(out), expected)
+        stored = {r["id"]: r for r in self.doc()["records"]}
+        self.assertEqual(out["records"], [stored[rid] for rid in expected])
+
+    def test_readers_of_verdicts_get_flags_and_the_resolving_verdict(self):
+        for phase, satellite in (("REVISION", "punk-03-edison"), ("EXECUTION", "punk-05-atlas"),
+                                 ("VERDICT", "punk-01-shaka"), ("OPERATIONS", "punk-06-york")):
+            with self.subTest(satellite=satellite):
+                # r-002 comes through the ref of r-003; r-006 resolved nothing.
+                self.check(phase, satellite, ["r-001", "r-002", "r-003", "r-004", "r-005"])
+
+    def test_other_satellites_get_the_flags_but_no_verdicts(self):
+        # r-002 is a note, which both read.
+        for phase, satellite in (("CRITIQUE", "punk-02-lilith"), ("RESEARCH", "punk-04-pythagoras")):
+            with self.subTest(satellite=satellite):
+                self.check(phase, satellite, ["r-001", "r-002", "r-003", "r-005"])
+
+
+class StellaFlagTests(RefusalBase):
+    def flag(self, *args):
+        return self.run_cli("flag", *args)
+
+    def assert_flag_rejected(self, *args):
+        before = self.snapshot()
+        code, out = self.flag(*args)
+        self.assertNotEqual(code, 0, args)
+        self.assertFalse(out["ok"])
+        self.assertTrue(out["errors"])
+        self.assertEqual(self.snapshot(), before)
+        return out["errors"]
+
+    def test_flag_without_a_pause(self):
+        self.init("standard")
+        state, start = self.doc()["state"], len(self.events())
+        code, out = self.flag("--refs", "r-001", "--text", "The goal is suspect.")
+        self.assertEqual(code, 0, out)
+        self.assertEqual((out["record_id"], out["next"]["action"]), ("r-002", "invoke_satellite"))
+        doc, events = self.assert_valid()
+        rec = doc["records"][-1]
+        self.assertEqual((rec["author"], rec["type"], rec["content"], rec["refs"]),
+                         ("stella", "flag", "The goal is suspect.", ["r-001"]))
+        self.assertEqual(doc["state"], state)
+        self.assertEqual([(e["type"], e["actor"], e["payload"]) for e in events[start:]],
+                         [("record_written", "stella", {"record_id": "r-002", "record_type": "flag"})])
+
+    def test_text_file(self):
+        self.init("light")
+        path = Path(self._tmp.name) / "f.txt"
+        path.write_bytes(b"Line one\n\nLine two\n")
+        code, out = self.flag("--refs", "r-001", "--text-file", str(path))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.doc()["records"][-1]["content"], "Line one\n\nLine two")
+
+    def test_flag_at_the_approval_pause(self):
+        self.init("light", "--hitl-after-verdict")
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        code, out = self.flag("--refs", "r-002", "--text", "Doubtful.")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["next"], APPROVAL_PAUSE)
+        self.assertEqual(self.run_cli("approve")[0], 0)
+        self.assert_valid()
+
+    def test_invalid_flags_write_nothing(self):
+        self.init("light")
+        self.assert_flag_rejected("--text", "x")  # no refs
+        self.assert_flag_rejected("--refs", "--text", "x")
+        self.assert_flag_rejected("--refs", "r-001")  # no text
+        self.assertEqual(self.assert_flag_rejected("--refs", "r-001", "r-099", "--text", "x"),
+                         ["ref 'r-099' does not exist"])
+        for text in ("", "  \n "):
+            self.assertEqual(self.assert_flag_rejected("--refs", "r-001", "--text", text),
+                             ["flag text must not be empty"])
+
+    def test_rejected_at_a_refusal_pause(self):
+        self.init("light")
+        self.refuse()
+        self.assertEqual(self.assert_flag_rejected("--refs", "r-001", "--text", "x"), [PAUSED])
+
+    def test_rejected_at_an_ops_not_ready_pause(self):
+        self.init("light", *YORK_ROSTER)
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        self.append(draft("punk-06-york", "ops_log", ready_to_close=False))
+        self.assertEqual(self.assert_flag_rejected("--refs", "r-001", "--text", "x"), [OPS_PAUSED])
+
+    def test_rejected_on_a_terminal_mission(self):
+        self.init("light")
+        self.run_cli("abort", "--reason", "x")
+        self.assertEqual(self.assert_flag_rejected("--refs", "r-001", "--text", "x"),
+                         ["mission is aborted; flags can no longer be recorded"])
+
+
+class FlagReportTests(OpsBase):
+    SECTION = "## Flags without a verdict decision"
+
+    def test_only_flags_after_the_last_verdict_are_listed(self):
+        self.init("light", *YORK_ROSTER)
+        self.append(draft("punk-03-edison", "proposal"),
+                    draft("punk-03-edison", "flag", "Old and resolved.", refs=["r-001"]))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED", flag_resolutions=resolutions("r-003")),
+                    draft("punk-01-shaka", "flag", "Same append as the verdict.", refs=["r-002"]))
+        self.append(draft("punk-06-york", "flag", "Found by York.", refs=["r-002", "r-004"]),
+                    draft("punk-06-york", "ops_log", "Checked."))
+        out, text = self.report_text()
+        self.assertEqual(out["record_ids"], ["r-002", "r-004", "r-007", "r-005", "r-006"])
+        self.assertIn(self.SECTION + "\n\n### r-005 — punk-01-shaka (flag)\n\n- Refs: r-002\n\n"
+                      "Same append as the verdict.\n", text)
+        self.assertIn("### r-006 — punk-06-york (flag)\n\n- Refs: r-002, r-004\n\nFound by York.\n", text)
+        self.assertNotIn("Old and resolved.", text)
+
+    def test_no_section_when_every_flag_is_resolved(self):
+        self.init("light")
+        self.append(draft("punk-03-edison", "proposal"), draft("punk-03-edison", "flag", refs=["r-001"]))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED", flag_resolutions=resolutions("r-003")))
+        self.assertNotIn(self.SECTION, self.report_text()[1])
+
+    def test_without_a_verdict_every_flag_is_listed(self):
+        self.init("light")
+        self.append(draft("punk-03-edison", "flag", "Early doubt.", refs=["r-001"]),
+                    draft("punk-03-edison", "proposal"))
+        self.run_cli("abort", "--reason", "x")
+        out, text = self.report_text()
+        self.assertEqual(out["record_ids"], ["r-002"])
+        self.assertIn("Early doubt.", text)
+
+    def to_operations_with_artifact(self):
+        self.init("full")
+        self.append(draft("punk-04-pythagoras", "finding"))
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-02-lilith", "critique", blocking=False))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        self.run_cli("approve")
+        self.append(draft("punk-05-atlas", "artifact", content="Half the deliverable."))  # r-007
+
+    def assert_artifact_reported(self):
+        """At the pause and again after stella ends the mission as incomplete."""
+        for status in ("active", "incomplete"):
+            out, text = self.report_text()
+            self.assertEqual((out["status"], out["record_ids"]), (status, ["r-007", "r-005", "r-008"]))
+            self.assertIn("Half the deliverable.", text)
+            if status == "active":
+                self.incomplete()
+
+    def test_artifacts_in_a_refusal_pause_and_incomplete_report(self):
+        self.to_operations_with_artifact()
+        self.refuse("punk-06-york")
+        self.assert_artifact_reported()
+
+    def test_artifacts_in_an_ops_not_ready_pause_and_incomplete_report(self):
+        self.to_operations_with_artifact()
+        self.not_ready()
+        self.assert_artifact_reported()
+
+
+class FullMissionWithRoundsAndFlagsTests(RefusalBase):
+    def test_two_rounds_a_dismissed_flag_and_a_reactivation(self):
+        self.init("full", "--research-rounds", "2")
+        self.append(draft("punk-04-pythagoras", "finding", gaps=[{"question": "Q?", "why_needed": "W."}]))
+        self.append(draft("punk-04-pythagoras", "finding", refs=["r-002"]))
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-02-lilith", "flag", "Unsupported.", refs=["r-003"]),  # r-005
+                    draft("punk-02-lilith", "critique", blocking=False))
+        self.refuse("punk-01-shaka")
+        self.reactivate()
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED", refs=["r-005"],
+                          flag_resolutions=resolutions("r-005")))
+        self.assertEqual(self.run_cli("approve")[0], 0)
+        self.append(draft("punk-05-atlas", "artifact"))
+        self.assertEqual(self.append(draft("punk-06-york", "ops_log"))["next"]["action"], "completed")
+        doc, _ = self.assert_valid()  # document and events against the two schemas of the script
+        self.assertEqual((doc["state"]["research_round"], doc["state"]["iteration"]), (2, 0))
+        self.assertEqual(self.sequence(), [
+            ("mission_started", "stella", "full"),
+            ("record_written", "stella", "goal"),
+            ("phase_changed", "system", "RESEARCH"),
+            ("satellite_activated", "punk-04-pythagoras", "RESEARCH"),
+            ("record_written", "punk-04-pythagoras", "finding"),
+            ("satellite_idle", "punk-04-pythagoras", "RESEARCH"),
+            ("phase_changed", "system", "RESEARCH"),
+            ("satellite_activated", "punk-04-pythagoras", "RESEARCH"),
+            ("record_written", "punk-04-pythagoras", "finding"),
+            ("satellite_idle", "punk-04-pythagoras", "RESEARCH"),
+            ("phase_changed", "system", "IDEATION"),
+            ("satellite_activated", "punk-03-edison", "IDEATION"),
+            ("record_written", "punk-03-edison", "proposal"),
+            ("satellite_idle", "punk-03-edison", "IDEATION"),
+            ("phase_changed", "system", "CRITIQUE"),
+            ("satellite_activated", "punk-02-lilith", "CRITIQUE"),
+            ("record_written", "punk-02-lilith", "flag"),
+            ("record_written", "punk-02-lilith", "critique"),
+            ("satellite_idle", "punk-02-lilith", "CRITIQUE"),
+            ("phase_changed", "system", "VERDICT"),
+            ("satellite_activated", "punk-01-shaka", "VERDICT"),
+            ("record_written", "punk-01-shaka", "refusal"),
+            ("satellite_idle", "punk-01-shaka", "VERDICT"),
+            ("hitl_requested", "system", "refusal"),
+            ("hitl_resolved", "stella", "reactivate"),
+            ("record_written", "stella", "note"),
+            ("satellite_activated", "punk-01-shaka", "VERDICT"),
+            ("record_written", "punk-01-shaka", "verdict"),
+            ("satellite_idle", "punk-01-shaka", "VERDICT"),
+            ("phase_changed", "system", "HITL_APPROVAL"),
+            ("hitl_requested", "system", "approval"),
+            ("hitl_resolved", "stella", "approved"),
+            ("record_written", "stella", "approval"),
+            ("phase_changed", "system", "EXECUTION"),
+            ("satellite_activated", "punk-05-atlas", "EXECUTION"),
+            ("record_written", "punk-05-atlas", "artifact"),
+            ("satellite_idle", "punk-05-atlas", "EXECUTION"),
+            ("phase_changed", "system", "OPERATIONS"),
+            ("satellite_activated", "punk-06-york", "OPERATIONS"),
+            ("record_written", "punk-06-york", "ops_log"),
+            ("satellite_idle", "punk-06-york", "OPERATIONS"),
+            ("phase_changed", "system", "COMPLETED"),
+            ("mission_completed", "system", None),
+        ])
+        rounds = [e["payload"]["research_round"] for e in self.events()
+                  if e["type"] == "phase_changed" and e["payload"]["to"] == "RESEARCH"]
+        self.assertEqual(rounds, [1, 2])
 
 
 if __name__ == "__main__":
