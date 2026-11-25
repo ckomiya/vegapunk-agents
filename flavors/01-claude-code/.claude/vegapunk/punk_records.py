@@ -77,6 +77,18 @@ RECORD_EXTRAS = (
 DRAFT_FIELDS = {"author", "type", "content", "refs", *RECORD_EXTRAS}
 DRAFT_REQUIRED = {"author", "type", "content", "refs"}
 RUNTIME_FIELDS = {"id", "phase", "iteration", "created_at"}
+# Draft fields that belong to a single record type.
+TYPE_ONLY_FIELDS = {
+    "provenance": "finding",
+    "sources": "finding",
+    "gaps": "finding",
+    "reason": "refusal",
+    "flag_resolutions": "verdict",
+    "ready_to_close": "ops_log",
+}
+PROVENANCES = ("external", "internal", "unsourced")
+SOURCE_ACCESS = ("opened", "snippet")
+FLAG_DECISIONS = ("upheld", "dismissed")
 
 
 class EngineError(Exception):
@@ -360,10 +372,24 @@ class Mission:
         )
 
 
+def check_schema_version(doc) -> None:
+    """Reject documents of another format before anything reads their fields."""
+    if not isinstance(doc, dict) or "schema_version" not in doc:
+        raise EngineError(
+            f"mission has no schema_version; this script reads {SCHEMA_VERSION} (start a new mission)"
+        )
+    if doc["schema_version"] != SCHEMA_VERSION:
+        raise EngineError(
+            f"mission was written with schema {doc['schema_version']}; this script reads {SCHEMA_VERSION}; "
+            "missions from earlier versions are not read (start a new mission)"
+        )
+
+
 def load_mission(directory: Path) -> tuple[Mission, dict, dict]:
     records_schema, event_schema, roles = load_runtime_files()
     try:
         doc = json.loads((directory / RECORDS_FILE).read_text(encoding="utf-8"))
+        check_schema_version(doc)
         events = [
             json.loads(line)
             for line in (directory / EVENTS_FILE).read_text(encoding="utf-8").split("\n")
@@ -489,6 +515,77 @@ def read_draft_text(source: str) -> str:
         raise EngineError(f"cannot read drafts from {source}: {exc}") from None
 
 
+def _blank(value) -> bool:
+    return not isinstance(value, str) or not value.strip()
+
+
+def _object_list_errors(tag: str, name: str, value, keys: tuple[str, ...]) -> tuple[list[str], list]:
+    """Check that value is an array of objects with no other keys than these.
+
+    Returns (errors, [(item label, item)] for the items that are objects).
+    """
+    shape = "{" + ", ".join(keys) + "}"
+    if not isinstance(value, list):
+        return [f"{tag}: '{name}' must be an array of {shape} objects"], []
+    errors, items = [], []
+    for j, item in enumerate(value):
+        label = f"{tag}: {name}[{j}]"
+        if not isinstance(item, dict):
+            errors.append(f"{label} must be a {shape} object")
+            continue
+        for key in sorted(set(item) - set(keys)):
+            errors.append(f"{label} has unknown field '{key}'")
+        items.append((label, item))
+    return errors, items
+
+
+def finding_errors(tag: str, d: dict) -> list[str]:
+    errors = []
+    provenance = d.get("provenance")
+    if provenance not in PROVENANCES:
+        errors.append(f"{tag}: a finding requires 'provenance' external, internal or unsourced")
+    if "sources" not in d:
+        errors.append(f"{tag}: a finding requires 'sources' (use [] when there are none)")
+    else:
+        found, items = _object_list_errors(tag, "sources", d["sources"], ("locator", "access"))
+        errors += found
+        for label, item in items:
+            if _blank(item.get("locator")):
+                errors.append(f"{label} requires a non-empty 'locator'")
+            if item.get("access") not in SOURCE_ACCESS:
+                errors.append(f"{label} requires 'access' opened or snippet")
+        if isinstance(d["sources"], list):
+            if provenance == "external" and not d["sources"]:
+                errors.append(f"{tag}: provenance 'external' requires at least one entry in 'sources'")
+            if provenance == "unsourced" and d["sources"]:
+                errors.append(f"{tag}: provenance 'unsourced' requires 'sources' to be []")
+    if provenance == "internal" and d.get("refs") == []:
+        errors.append(f"{tag}: provenance 'internal' requires at least one id in 'refs'")
+    if "gaps" in d:
+        found, items = _object_list_errors(tag, "gaps", d["gaps"], ("question", "why_needed"))
+        errors += found
+        if d["gaps"] == []:
+            errors.append(f"{tag}: 'gaps' must not be empty; omit it when there are none")
+        for label, item in items:
+            for key in ("question", "why_needed"):
+                if _blank(item.get(key)):
+                    errors.append(f"{label} requires a non-empty '{key}'")
+    return errors
+
+
+def flag_resolution_errors(tag: str, value, flag_ids: set[str]) -> list[str]:
+    errors, items = _object_list_errors(tag, "flag_resolutions", value, ("flag", "decision"))
+    if value == []:
+        errors.append(f"{tag}: 'flag_resolutions' must not be empty; omit it when there is nothing to resolve")
+    for label, item in items:
+        flag = item.get("flag")
+        if not isinstance(flag, str) or flag not in flag_ids:
+            errors.append(f"{label}: 'flag' {flag!r} is not the id of an existing flag record")
+        if item.get("decision") not in FLAG_DECISIONS:
+            errors.append(f"{label} requires 'decision' upheld or dismissed")
+    return errors
+
+
 def validate_drafts(m: Mission, text: str) -> list[dict]:
     if m.doc["state"]["status"] != "active":
         raise EngineError(f"mission is {m.doc['state']['status']}; nothing can be appended")
@@ -506,6 +603,7 @@ def validate_drafts(m: Mission, text: str) -> list[dict]:
     errors = []
     produced = PHASE_PRODUCES[phase]
     ids = {r["id"] for r in m.doc["records"]}
+    flag_ids = {r["id"] for r in m.doc["records"] if r["type"] == "flag"}
     counts: dict[str, int] = {}
     for i, d in enumerate(drafts):
         tag = f"draft[{i}]"
@@ -558,6 +656,18 @@ def validate_drafts(m: Mission, text: str) -> list[dict]:
                     errors.append(f"{tag}: NEEDS_REVISION is invalid because punk-03-edison is not in the roster")
         elif "verdict" in d:
             errors.append(f"{tag}: 'verdict' is only allowed on a verdict record")
+        for key, owner in TYPE_ONLY_FIELDS.items():
+            if key in d and rtype != owner:
+                article = "an" if owner == "ops_log" else "a"
+                errors.append(f"{tag}: '{key}' is only allowed on {article} {owner} record")
+        if rtype == "finding":
+            errors += finding_errors(tag, d)
+        if rtype == "flag" and refs == []:
+            errors.append(f"{tag}: a flag requires at least one id in 'refs'")
+        if rtype == "ops_log" and not isinstance(d.get("ready_to_close"), bool):
+            errors.append(f"{tag}: an ops_log requires boolean 'ready_to_close'")
+        if rtype == "verdict" and "flag_resolutions" in d:
+            errors += flag_resolution_errors(tag, d["flag_resolutions"], flag_ids)
 
     if counts.get(produced, 0) == 0:
         errors.append(f"{phase} must produce at least one {produced!r} record")
@@ -791,31 +901,23 @@ def cmd_timeline(args) -> str:
 
 
 def cmd_sources(args) -> str:
-    """Markdown list of the lines under '## Sources' of every finding (read-only, writes nothing)."""
+    """Markdown summary of the provenance and sources of every finding (read-only, writes nothing)."""
     m, _, _ = load_mission(resolve_dir(args))
     findings = [r for r in m.doc["records"] if r["type"] == "finding"]
     if not findings:
         return "No findings recorded.\n"
-    out = [f"# Sources — mission {m.doc['mission']['id']}", ""]
+    breakdown = ", ".join(f"{p}: {sum(r['provenance'] == p for r in findings)}" for p in PROVENANCES)
+    out = [f"# Sources — mission {m.doc['mission']['id']}", "", f"Findings: {len(findings)} ({breakdown})", ""]
     for r in findings:
-        out += [f"## {r['id']} — {r['author']}", ""]
-        section: list[str] | None = None
-        for line in r["content"].split("\n"):
-            if section is None:
-                if line.strip() == "## Sources":
-                    section = []
-            elif line.startswith("## "):
-                break
-            else:
-                section.append(line.rstrip("\r"))
-        if section is None:
-            out.append("(no Sources section)")
-        else:
-            while section and not section[0].strip():
-                section.pop(0)
-            while section and not section[-1].strip():
-                section.pop()
-            out += section or ["(no Sources section)"]
+        out += [
+            f"## {r['id']} — {r['author']}",
+            "",
+            f"- Provenance: {r['provenance']}",
+            f"- Gaps declared: {len(r.get('gaps', []))}",
+            "- Sources:" if r["sources"] else "- Sources: none",
+        ]
+        # A locator is untrusted text: keep it on one line so it cannot add lines to this block.
+        out += [f"  - {src['access']}: {' '.join(src['locator'].split())}" for src in r["sources"]]
         out.append("")
     return "\n".join(out)
 
@@ -1020,7 +1122,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("timeline", parents=[common], help="print the mission history as Markdown, grouped by satellite (read-only)")
     p.set_defaults(func=cmd_timeline)
 
-    p = sub.add_parser("sources", parents=[common], help="print the Sources lines of every finding as Markdown (read-only)")
+    p = sub.add_parser("sources", parents=[common], help="print the provenance and sources of every finding as Markdown (read-only)")
     p.set_defaults(func=cmd_sources)
 
     p = sub.add_parser("report", parents=[common], help="write deliverable.md for a finished mission")

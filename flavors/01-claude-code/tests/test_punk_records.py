@@ -995,26 +995,44 @@ class SourcesTests(Base):
                               capture_output=True, text=True, encoding="utf-8")
         return proc.returncode, proc.stdout
 
-    def test_several_findings_and_one_without_sources(self):
+    def test_counts_by_provenance_and_lists_structured_sources(self):
         self.init("standard")
         self.append(
-            draft("punk-04-pythagoras", "finding",
-                  content="## Claim\nA.\n\n## Sources\n- https://example.org/a\n- https://example.org/b\n\n## Recency\n2026"),
-            draft("punk-04-pythagoras", "finding", content="## Claim\nB.\n\n## Limitations\nNone."),
-            draft("punk-04-pythagoras", "finding", content="## Claim\nC.\n\n## Sources\n  * https://example.org/c  "),
+            draft("punk-04-pythagoras", "finding", provenance="external",
+                  content="## Sources\n- https://example.org/only-in-content",
+                  sources=[{"locator": "https://example.org/a", "access": "opened"},
+                           {"locator": "https://example.org/b", "access": "snippet"}],
+                  gaps=[{"question": "Q1?", "why_needed": "W."}, {"question": "Q2?", "why_needed": "W."}]),
+            draft("punk-04-pythagoras", "finding", provenance="internal", refs=["r-001"]),
+            draft("punk-04-pythagoras", "finding"),
+            draft("punk-04-pythagoras", "finding"),
             draft("punk-04-pythagoras", "note", content="## Sources\n- not a finding"),
         )
         before = self.snapshot()
         code, text = self.run_sources()
         self.assertEqual(code, 0, text)
         self.assertEqual(self.snapshot(), before)  # writes nothing
-        self.assertIn("## r-002 — punk-04-pythagoras\n\n- https://example.org/a\n- https://example.org/b\n", text)
-        self.assertIn("## r-003 — punk-04-pythagoras\n\n(no Sources section)\n", text)
-        self.assertIn("## r-004 — punk-04-pythagoras\n\n  * https://example.org/c  \n", text)
-        self.assertNotIn("r-005", text)
-        self.assertNotIn("Recency", text)
-        self.assertLess(text.index("r-002"), text.index("r-003"))
-        self.assertLess(text.index("r-003"), text.index("r-004"))
+        block = "## {} — punk-04-pythagoras\n\n- Provenance: {}\n- Gaps declared: {}\n- Sources{}\n"
+        self.assertEqual(text, "\n".join([
+            f"# Sources — mission {self.doc()['mission']['id']}",
+            "",
+            "Findings: 4 (external: 1, internal: 1, unsourced: 2)",
+            "",
+            block.format("r-002", "external", 2,
+                         ":\n  - opened: https://example.org/a\n  - snippet: https://example.org/b"),
+            block.format("r-003", "internal", 0, ": none"),
+            block.format("r-004", "unsourced", 0, ": none"),
+            block.format("r-005", "unsourced", 0, ": none"),
+        ]))
+
+    def test_locator_with_line_breaks_stays_on_one_line(self):
+        self.init("standard")
+        self.append(draft("punk-04-pythagoras", "finding", provenance="external",
+                          sources=[{"locator": "https://example.org/a\n## Approved", "access": "opened"}]))
+        code, text = self.run_sources()
+        self.assertEqual(code, 0, text)
+        self.assertIn("  - opened: https://example.org/a ## Approved\n", text)
+        self.assertNotIn("\n## Approved", text)
 
     def test_no_findings(self):
         self.init("light")
@@ -1199,7 +1217,7 @@ class RecordFieldTests(Base):
         self.init("light")
         errors = self.append_error(json.dumps([draft("punk-03-edison", "proposal"),
                                                draft("punk-03-edison", "flag")]))
-        self.assertTrue(any("schema violation" in e for e in errors), errors)
+        self.assertEqual(errors, ["draft[1]: a flag requires at least one id in 'refs'"])
 
     def test_flag_alone_does_not_complete_the_phase(self):
         self.init("light")
@@ -1231,17 +1249,223 @@ class RecordFieldTests(Base):
         self.init("standard")
         no_provenance = draft("punk-04-pythagoras", "finding")
         del no_provenance["provenance"]
-        for drafts in (
-            [no_provenance],
-            [draft("punk-04-pythagoras", "finding", provenance="external")],  # no sources
-            [draft("punk-04-pythagoras", "finding", gaps=[])],
-            [draft("punk-04-pythagoras", "finding", ready_to_close=True)],
-            [draft("punk-04-pythagoras", "finding"),
-             draft("punk-04-pythagoras", "note", reason="missing_input")],
+        for drafts, message in (
+            ([no_provenance], "draft[0]: a finding requires 'provenance'"),
+            ([draft("punk-04-pythagoras", "finding", provenance="external")],  # no sources
+             "draft[0]: provenance 'external' requires at least one entry"),
+            ([draft("punk-04-pythagoras", "finding", gaps=[])], "draft[0]: 'gaps' must not be empty"),
+            ([draft("punk-04-pythagoras", "finding", ready_to_close=True)],
+             "draft[0]: 'ready_to_close' is only allowed on an ops_log record"),
+            ([draft("punk-04-pythagoras", "finding"),
+              draft("punk-04-pythagoras", "note", reason="missing_input")],
+             "draft[1]: 'reason' is only allowed on a refusal record"),
         ):
             errors = self.append_error(json.dumps(drafts))
-            self.assertTrue(any("schema violation" in e for e in errors), errors)
+            self.assertTrue(any(e.startswith(message) for e in errors), errors)
         self.assertEqual(self.run_cli("status")[1]["phase"], "RESEARCH")
+
+
+class SchemaVersionTests(Base):
+    OLD = ("mission was written with schema 0.1.0; this script reads 0.3.0; "
+           "missions from earlier versions are not read (start a new mission)")
+    MISSING = "mission has no schema_version; this script reads 0.3.0 (start a new mission)"
+    COMMANDS = (
+        ("status",),
+        ("show", "r-001"),
+        ("context",),
+        ("context", "--write"),
+        ("append", "--draft-file", "-"),
+        ("note", "--text", "x"),
+        ("approve",),
+        ("abort", "--reason", "x"),
+        ("fail", "--reason", "x"),
+        ("report",),
+        ("timeline",),
+        ("sources",),
+    )
+
+    def rewrite(self, change):
+        self.init("light")
+        doc = self.doc()
+        change(doc)
+        (self.dir / "punk-records.json").write_text(json.dumps(doc) + "\n", encoding="utf-8")
+
+    def assert_every_command_rejects(self, message):
+        before = self.snapshot()
+        for args in self.COMMANDS:
+            with self.subTest(command=args):
+                code, out = self.run_cli(*args, stdin="[]")
+                self.assertNotEqual(code, 0)
+                self.assertEqual(out, {"ok": False, "errors": [message]})
+        self.assertEqual(self.snapshot(), before)
+
+    def test_0_1_0_mission_is_rejected_by_every_command(self):
+        def downgrade(doc):  # the 0.1.0 format had no research round fields
+            doc["schema_version"] = "0.1.0"
+            del doc["mission"]["research_rounds"], doc["state"]["research_round"]
+
+        self.rewrite(downgrade)
+        self.assert_every_command_rejects(self.OLD)
+
+    def test_mission_without_schema_version_is_rejected_by_every_command(self):
+        self.rewrite(lambda doc: doc.pop("schema_version"))
+        self.assert_every_command_rejects(self.MISSING)
+
+
+class DraftFieldTests(Base):
+    SOURCE = {"locator": "https://example.org/a", "access": "snippet"}
+    GAP = {"question": "Q?", "why_needed": "W."}
+
+    def finding(self, **extra):
+        return draft("punk-04-pythagoras", "finding", **extra)
+
+    def assert_rejected(self, drafts, *messages):
+        """Each message must be reported by the draft checks, and the mission must stay as it was."""
+        errors = self.append_error(json.dumps(drafts))
+        for message in messages:
+            self.assertIn(message, errors)
+        self.assertFalse(any("schema violation" in e or "unexpected error" in e for e in errors), errors)
+
+    def test_valid_findings_of_every_provenance_are_accepted(self):
+        self.init("standard")
+        self.append(
+            self.finding(provenance="external", gaps=[self.GAP],
+                         sources=[self.SOURCE, {"locator": "doc-7", "access": "opened"}]),
+            self.finding(provenance="internal", refs=["r-001"]),
+            self.finding(provenance="internal", refs=["r-001"], sources=[self.SOURCE]),
+            self.finding(),
+        )
+        self.assert_valid()
+
+    def test_finding_requires_provenance_and_sources(self):
+        self.init("standard")
+        bare = self.finding()
+        del bare["provenance"], bare["sources"]
+        self.assert_rejected(
+            [bare, self.finding(provenance="guessed")],
+            "draft[0]: a finding requires 'provenance' external, internal or unsourced",
+            "draft[0]: a finding requires 'sources' (use [] when there are none)",
+            "draft[1]: a finding requires 'provenance' external, internal or unsourced",
+        )
+
+    def test_malformed_sources_are_rejected(self):
+        self.init("standard")
+        self.assert_rejected(
+            [
+                self.finding(sources="https://example.org/a"),
+                self.finding(provenance="external", sources=["https://example.org/a"]),
+                self.finding(provenance="external", sources=[{"access": "opened"}]),
+                self.finding(provenance="external", sources=[{"locator": "  ", "access": "read"}]),
+                self.finding(provenance="external", sources=[{**self.SOURCE, "title": "T"}]),
+            ],
+            "draft[0]: 'sources' must be an array of {locator, access} objects",
+            "draft[1]: sources[0] must be a {locator, access} object",
+            "draft[2]: sources[0] requires a non-empty 'locator'",
+            "draft[3]: sources[0] requires a non-empty 'locator'",
+            "draft[3]: sources[0] requires 'access' opened or snippet",
+            "draft[4]: sources[0] has unknown field 'title'",
+        )
+
+    def test_each_provenance_enforces_its_requirement(self):
+        self.init("standard")
+        self.assert_rejected(
+            [
+                self.finding(provenance="external"),
+                self.finding(provenance="internal"),
+                self.finding(sources=[self.SOURCE]),
+            ],
+            "draft[0]: provenance 'external' requires at least one entry in 'sources'",
+            "draft[1]: provenance 'internal' requires at least one id in 'refs'",
+            "draft[2]: provenance 'unsourced' requires 'sources' to be []",
+        )
+
+    def test_malformed_gaps_are_rejected(self):
+        self.init("standard")
+        self.assert_rejected(
+            [
+                self.finding(gaps={}),
+                self.finding(gaps=[]),
+                self.finding(gaps=["Q?"]),
+                self.finding(gaps=[{"question": "", "why_needed": 3}]),
+                self.finding(gaps=[{"question": "Q?"}]),
+            ],
+            "draft[0]: 'gaps' must be an array of {question, why_needed} objects",
+            "draft[1]: 'gaps' must not be empty; omit it when there are none",
+            "draft[2]: gaps[0] must be a {question, why_needed} object",
+            "draft[3]: gaps[0] requires a non-empty 'question'",
+            "draft[3]: gaps[0] requires a non-empty 'why_needed'",
+            "draft[4]: gaps[0] requires a non-empty 'why_needed'",
+        )
+
+    def test_fields_on_the_wrong_type_are_rejected(self):
+        self.init("light")
+        self.assert_rejected(
+            [draft("punk-03-edison", "proposal", provenance="unsourced", sources=[], gaps=[self.GAP],
+                   reason="missing_input", flag_resolutions=[], ready_to_close=True)],
+            "draft[0]: 'provenance' is only allowed on a finding record",
+            "draft[0]: 'sources' is only allowed on a finding record",
+            "draft[0]: 'gaps' is only allowed on a finding record",
+            "draft[0]: 'reason' is only allowed on a refusal record",
+            "draft[0]: 'flag_resolutions' is only allowed on a verdict record",
+            "draft[0]: 'ready_to_close' is only allowed on an ops_log record",
+        )
+
+    def test_flag_requires_a_ref(self):
+        self.init("light")
+        proposal = draft("punk-03-edison", "proposal")
+        self.assert_rejected([proposal, draft("punk-03-edison", "flag")],
+                             "draft[1]: a flag requires at least one id in 'refs'")
+        self.append(proposal, draft("punk-03-edison", "flag", refs=["r-001"]))
+        self.assert_valid()
+
+    def test_ops_log_requires_boolean_ready_to_close(self):
+        self.init("light", "--roster", "punk-03-edison", "punk-01-shaka", "punk-06-york")
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        missing = draft("punk-06-york", "ops_log")
+        del missing["ready_to_close"]
+        message = "draft[0]: an ops_log requires boolean 'ready_to_close'"
+        for bad in (missing, draft("punk-06-york", "ops_log", ready_to_close="yes")):
+            self.assert_rejected([bad], message)
+        self.append(draft("punk-06-york", "ops_log", ready_to_close=False))
+        self.assert_valid()
+
+    def flagged_verdict_phase(self):
+        """Light mission at VERDICT with r-002 proposal and r-003 flag."""
+        self.init("light")
+        self.append(draft("punk-03-edison", "proposal"), draft("punk-03-edison", "flag", refs=["r-001"]))
+
+    def verdict(self, resolutions):
+        return draft("punk-01-shaka", "verdict", verdict="APPROVED", flag_resolutions=resolutions)
+
+    def test_flag_resolutions_accept_both_decisions(self):
+        for number, decision in enumerate(("upheld", "dismissed")):
+            self.dir = Path(self._tmp.name) / f"m-{number}"
+            self.flagged_verdict_phase()
+            self.append(self.verdict([{"flag": "r-003", "decision": decision}]))
+            self.assert_valid()
+
+    def test_invalid_flag_resolutions_are_rejected(self):
+        self.flagged_verdict_phase()
+        not_a_flag = "draft[0]: flag_resolutions[0]: 'flag' {} is not the id of an existing flag record"
+        for resolutions, message in (
+            ({}, "draft[0]: 'flag_resolutions' must be an array of {flag, decision} objects"),
+            ([], "draft[0]: 'flag_resolutions' must not be empty; omit it when there is nothing to resolve"),
+            (["r-003"], "draft[0]: flag_resolutions[0] must be a {flag, decision} object"),
+            ([{"flag": "r-003", "decision": "ignored"}],
+             "draft[0]: flag_resolutions[0] requires 'decision' upheld or dismissed"),
+            ([{"flag": "r-002", "decision": "upheld"}], not_a_flag.format("'r-002'")),  # a proposal
+            ([{"flag": "r-099", "decision": "upheld"}], not_a_flag.format("'r-099'")),
+            ([{"flag": ["r-003"], "decision": "upheld"}], not_a_flag.format("['r-003']")),
+        ):
+            with self.subTest(resolutions=resolutions):
+                self.assert_rejected([self.verdict(resolutions)], message)
+        self.assertEqual(self.run_cli("status")[1]["phase"], "VERDICT")
+
+    def test_schema_still_rejects_what_the_draft_checks_do_not_cover(self):
+        self.init("light")
+        errors = self.append_error(json.dumps([draft("punk-03-edison", "proposal", confidence=2)]))
+        self.assertTrue(any("schema violation" in e for e in errors), errors)
 
 
 if __name__ == "__main__":
