@@ -103,7 +103,7 @@ A flavor is an implementation of the `core/` spec on a specific runtime.
 
 | Flavor | Folder | Status |
 |--------|--------|--------|
-| Claude Code (native) | `flavors/01-claude-code` | 🚧 Planned |
+| Claude Code (native) | `flavors/01-claude-code` | ✅ Available (v0.2.0) |
 | LangGraph | `flavors/02-langgraph` | 🚧 Planned |
 | CrewAI | `flavors/03-crewai` | 🚧 Planned |
 | Anthropic SDK | `flavors/04-anthropic-sdk` | 🚧 Planned |
@@ -143,7 +143,8 @@ vegapunk-agents/
 
 - [x] Phase 0 — Repo init
 - [x] Phase 1 — Core spec & prompts
-- [ ] Phase 2 — Claude Code native flavor
+- [x] Phase 2 — Claude Code native flavor
+- [ ] Phase 2.5 — Core v0.3 (planned): refusal records, an `incomplete` state and finding provenance. See Post 2, "What's next".
 - [ ] Phase 3 — LangGraph flavor + Startup Validator demo
 - [ ] Phase 4 — Egghead Monitor visualizer
 - [ ] Phase 5 — CrewAI & Anthropic SDK flavors
