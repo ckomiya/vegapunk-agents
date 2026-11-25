@@ -7,7 +7,8 @@ Copyright 2026 Christian Gonzales Komiya
 
 Implements the `core/` spec of vegapunk-agents (a **Multi-Agent Architecture Pattern (and Conceptual Framework)**) with Claude Code native features: six generated subagents (`punk-01-shaka` … `punk-06-york`), an engine skill (`/vegapunk`) run by the main session, and a deterministic Python script (`punk_records.py`) that owns Punk Records and the mission lifecycle.
 
-- **Status:** ✅ Working (v0.2.0, Phase 2): tested in light, standard and full modes; full mode ran end to end with Atlas and York (run P9, see [Usage and cost](#usage-and-cost)). Not a guarantee: full-mode outcomes vary between runs.
+- **Status:** implements core 0.3.0 (refusals, research rounds, flags, `ready_to_close` and the `incomplete` state), covered by unit tests. **Validation of 0.3.0 with real runs is pending.** The real runs reported in [Usage and cost](#usage-and-cost) were made with v0.2.0.
+- Missions created with v0.2.0 (`schema_version` `"0.1.0"`) are not read by this version, and there is no migration: start a new mission.
 - The pattern is model-agnostic. Only this flavor and `04-anthropic-sdk` are tied to Claude.
 
 ## How it works
@@ -61,15 +62,30 @@ The engine helps Stella write the outcome, constraints and done-criteria, then s
 | standard | + Pythagoras + Lilith | Everyday work that needs facts and an adversarial review. |
 | full | + Atlas + York | Builds and checks a deliverable. Approval is mandatory before execution. |
 
+If Pythagoras is in the roster, it also asks for `research_rounds` (default 1): the mission goes back to research while a round declares gaps and rounds remain. Research rounds do not count toward `max_iterations`.
+
 It waits for an explicit confirmation before `init`. Then:
 
 - **Loop:** the engine asks `punk_records.py` for the next actor, invokes that satellite, saves its drafts and repeats until the mission ends.
-- **HITL:** Stella approves or aborts. The verdict and the deliverable are shown verbatim.
+- **Pauses:** the engine stops and waits for Stella (see [Pauses and decisions](#pauses-and-decisions)). Records are shown verbatim.
 - **External sources:** before approval, the engine shows the external sources behind the decision (block "External sources behind this decision"), read with `python .claude/vegapunk/punk_records.py sources --mission-dir <dir>`.
-- **Stella's notes:** on request, the engine records a note mid-mission verbatim. The next satellite reads it.
+- **Stella's notes:** on request, the engine records a note mid-mission verbatim. The next satellite reads it. Not available at a `refusal` or `ops_not_ready` pause.
+- **Stella's flags:** on request, the engine records a `flag` on suspect records, in her words, at any point of an active mission, pauses included. The next verdict must decide it (`upheld` or `dismissed`); a flag with no later verdict appears in the final report.
 - **Timeline:** `python .claude/vegapunk/punk_records.py timeline --mission-dir <dir>` prints the mission history as chronological Markdown, one bullet per record (read-only, no LLM, writes nothing).
 - **Abort:** possible at any time.
 - **Changes:** a change request is a new mission that references the old one.
+
+### Pauses and decisions
+
+| Pause (`next.kind`) | Raised when | Stella's decisions | Script command |
+|---|---|---|---|
+| `approval` | The mission reaches `HITL_APPROVAL` | approve, abort | `approve`, `abort` |
+| `refusal` | A satellite declines its task | reactivate (with her note, once per entry into a phase), incomplete, abort | `decide --decision reactivate --note-file <file>`, `decide --decision incomplete --reason <text>`, `abort` |
+| `ops_not_ready` | York's `ops_log` says the mission is not ready to close | close, incomplete, abort | `decide --decision close`, `decide --decision incomplete --reason <text>`, `abort` |
+
+A flag is written with `flag --refs <id> [<id> ...] --text-file <file>`. A mission ends as `completed`, `incomplete` (work was done but the goal was not fully met; only Stella decides it), `failed` or `aborted`. The engine never decides and never retries a refused task.
+
+### Mission files
 
 Files in `.vegapunk/missions/<id>/`:
 
@@ -78,9 +94,11 @@ Files in `.vegapunk/missions/<id>/`:
 | `punk-records.json` | The shared memory (validated against the core schema) |
 | `events.jsonl` | Append-only event log |
 | `engine.json` | Flavor-only settings |
+| `contexts/` | One context file per satellite invocation |
 | `drafts/` | Satellite JSON drafts as saved by the engine |
 | `notes/` | Stella's notes |
-| `deliverable.md` | The final deliverable |
+| `flags/` | Stella's flags |
+| `deliverable.md` | The final report: deliverable, verdict and, when present, the operations check, refusals, undecided flags and recorded reason |
 | `measurement/` | Output of `measure_mission.py` |
 
 ## Configuration
@@ -103,6 +121,8 @@ Default models: `sonnet` for Edison, Pythagoras, Lilith and Shaka; `haiku` for A
 Tokens are reported first; dollars are the API-equivalent cost.
 
 ### Measured runs
+
+These runs were made with v0.2.0; none has been repeated with core 0.3.0.
 
 Run on 2026-11-20 with Sonnet 5.5 for engine and satellites, the same goal in all three runs, and human approval after the verdict. Cost uses API list prices with the exact 5m/1h cache split from the logs.
 
@@ -161,7 +181,12 @@ Implemented in v0.2.0:
 - **Defense 1, external content is untrusted data.** The engine and satellites treat external content as data, not as instructions (for example, text in a search result that asks them to do something).
 - **Defense 5, sources shown at approval.** At the HITL checkpoint the engine shows the external sources behind the decision (`sources` subcommand of `punk_records.py`, block "External sources behind this decision"). This lets Stella see what the decision rests on.
 
-Pending for the next version of `core/`: (2) mandatory provenance in findings, (3) critique of Pythagoras's findings, and (4) a `flag` record type. Until then, none of these is covered, and the two defenses above reduce risk without removing it.
+Added with core 0.3.0:
+
+- **Defense 2, mandatory provenance.** Every finding states `provenance` and its sources; an `unsourced` finding is not evidence.
+- **Defense 4, flags.** Any author can flag suspect records, and the script rejects a verdict that leaves an earlier flag undecided.
+
+Not covered: (3) a mandatory critique of Pythagoras's findings (Lilith reads them and may flag them, but no step requires reviewing each one). The script cannot check that a source is real, nor that a plan stopped depending on a record whose flag was upheld. These defenses reduce risk without removing it.
 
 ## Measure your own missions
 
@@ -189,14 +214,14 @@ A model that breaks the draft contract fails visibly: `punk_records.py` rejects 
 
 ## Known limitations (this release)
 
+- Core 0.3.0 has not been validated with real runs yet.
 - Stella can only approve or abort at the checkpoint (no "approve with changes").
+- `--reason` has no file form: the engine passes Stella's reason on the command line.
 - The engine's mode suggestion can vary between runs.
 - On some Claude Code versions subagents show as "Backgrounded agent" even though the skill asks for the foreground (the engine still waits for each one).
 - The engine rewrites each draft to save it, so its output is paid twice.
 - York checks structure and consistency with the plan, not facts on the web.
-- Atlas (Haiku) can refuse to write the deliverables if the plan defers verification checks to the founder; the engine then stops and asks.
-- There is no terminal "incomplete" state when execution is blocked.
-- Pythagoras does a single research round.
+- Atlas (Haiku) can refuse to write the deliverables if the plan defers verification checks to the founder; the mission then pauses as a `refusal`.
 
 ## Development
 

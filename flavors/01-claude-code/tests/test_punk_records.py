@@ -38,7 +38,7 @@ def draft(author, rtype, content="Content.", refs=None, **extra):
 
 
 APPROVAL_PAUSE = {"phase": "HITL_APPROVAL", "actor": "stella", "action": "await_hitl",
-                  "kind": "approval", "decisions": ["approve", "abort"]}
+                  "kind": "approval", "decisions": ["approve", "abort"], "record_id": "r-003"}
 
 
 def without_context(nxt):
@@ -218,7 +218,7 @@ class LifecycleTests(Base):
         self.append(draft("punk-03-edison", "proposal"))
         self.append(draft("punk-02-lilith", "critique", blocking=False))
         out = self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
-        self.assertEqual(out["next"], APPROVAL_PAUSE)
+        self.assertEqual(out["next"], {**APPROVAL_PAUSE, "record_id": "r-005"})
         self.assertTrue(self.append_error(json.dumps([draft("punk-05-atlas", "artifact")])))  # no drafts at HITL
         out = self.run_cli("approve")[1]
         self.assertEqual(without_context(out["next"]), {"phase": "EXECUTION", "actor": "punk-05-atlas", "action": "invoke_satellite"})
@@ -1586,7 +1586,7 @@ class RefusalDraftTests(RefusalBase):
                 out = self.refuse(reason=reason)
                 self.assertEqual(out["next"], {
                     "phase": "IDEATION", "actor": "stella", "action": "await_hitl", "kind": "refusal",
-                    "decisions": ["reactivate", "incomplete", "abort"],
+                    "decisions": ["reactivate", "incomplete", "abort"], "record_id": "r-002",
                 })
                 doc, events = self.assert_valid()
                 self.assertEqual(doc["state"], state)
@@ -1872,6 +1872,11 @@ class RefusalFlowTests(RefusalBase):
 YORK_ROSTER = ("--roster", "punk-03-edison", "punk-01-shaka", "punk-06-york")
 OPS_PAUSE = {"phase": "OPERATIONS", "actor": "stella", "action": "await_hitl", "kind": "ops_not_ready",
              "decisions": ["close", "incomplete", "abort"]}
+
+
+def ops_pause(record_id="r-004"):
+    """The `next` of an ops_not_ready pause raised by that ops_log."""
+    return {**OPS_PAUSE, "record_id": record_id}
 OPS_PAUSED = "mission paused: waiting for stella's decision (kind: ops_not_ready)"
 
 
@@ -1899,7 +1904,7 @@ class OpsNotReadyTests(OpsBase):
     def test_not_ready_pauses_in_operations_with_the_exact_events(self):
         state, start = self.doc()["state"], len(self.events())
         out = self.not_ready()
-        self.assertEqual(out["next"], OPS_PAUSE)
+        self.assertEqual(out["next"], ops_pause())
         self.assertEqual(self.sequence(start), [
             ("record_written", "punk-06-york", "ops_log"),
             ("satellite_idle", "punk-06-york", "OPERATIONS"),
@@ -1912,13 +1917,13 @@ class OpsNotReadyTests(OpsBase):
             "reason": "punk-06-york reports that the mission is not ready to close.",
             "record_id": "r-004",
         })
-        self.assertEqual(self.run_cli("status")[1]["next"], OPS_PAUSE)
+        self.assertEqual(self.run_cli("status")[1]["next"], ops_pause())
 
     def test_one_not_ready_ops_log_among_several_still_pauses(self):
         out = self.append(draft("punk-06-york", "ops_log", "Part A is fine."),
                           draft("punk-06-york", "ops_log", "Part B is missing.", ready_to_close=False),
                           draft("punk-06-york", "ops_log", "Part C is fine."))
-        self.assertEqual(out["next"], OPS_PAUSE)
+        self.assertEqual(out["next"], ops_pause("r-005"))
         self.assertEqual(self.events()[-1]["payload"]["record_id"], "r-005")
         self.assertIn("Part B is missing.", self.report_text()[1])
         self.assert_valid()
@@ -1936,7 +1941,7 @@ class OpsNotReadyTests(OpsBase):
         self.not_ready()
         records, events = self.doc(), self.events()
         code, status = self.run_cli("status")
-        self.assertEqual((code, status["next"]), (0, OPS_PAUSE))
+        self.assertEqual((code, status["next"]), (0, ops_pause()))
         self.assertEqual(self.run_cli("show", "r-004")[1]["records"][0]["type"], "ops_log")
         for command in ("timeline", "sources"):
             proc = subprocess.run([sys.executable, str(SCRIPT), command, "--mission-dir", str(self.dir)],
@@ -2030,14 +2035,14 @@ class OpsNotReadyTests(OpsBase):
         out = self.refuse("punk-06-york")
         self.assertEqual(out["next"], {
             "phase": "OPERATIONS", "actor": "stella", "action": "await_hitl", "kind": "refusal",
-            "decisions": ["reactivate", "incomplete", "abort"],
+            "decisions": ["reactivate", "incomplete", "abort"], "record_id": "r-004",
         })
         self.assert_cli_rejects(
             ("decide", "--decision", "close"),
             "close is not valid at this pause (kind: refusal); valid: reactivate, incomplete, abort",
         )
         self.reactivate()
-        self.assertEqual(self.not_ready()["next"], OPS_PAUSE)
+        self.assertEqual(self.not_ready()["next"], ops_pause("r-006"))
         self.assert_valid()
 
 
@@ -2058,7 +2063,7 @@ class OpsNotReadyFlowTests(OpsBase):
         self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
         self.run_cli("approve")
         self.append(draft("punk-05-atlas", "artifact", content="Artifact body."))
-        self.assertEqual(self.not_ready()["next"], OPS_PAUSE)
+        self.assertEqual(self.not_ready()["next"], ops_pause("r-008"))
         self.assertEqual(self.decide("close")[0], 0)
         doc, _ = self.assert_valid()
         self.assertEqual(doc["state"]["status"], "completed")
@@ -2283,17 +2288,56 @@ class StellaFlagTests(RefusalBase):
             self.assertEqual(self.assert_flag_rejected("--refs", "r-001", "--text", text),
                              ["flag text must not be empty"])
 
-    def test_rejected_at_a_refusal_pause(self):
+    def assert_flag_keeps_the_pause(self, paused_message):
+        """The flag is recorded; the pause, its decisions and the state stay as they were."""
+        state, pending = self.doc()["state"], self.run_cli("status")[1]["next"]
+        start = len(self.events())
+        code, out = self.flag("--refs", "r-001", "--text", "Suspect.")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["next"], pending)
+        self.assertEqual(self.run_cli("status")[1]["next"], pending)
+        self.assertEqual(self.sequence(start), [("record_written", "stella", "flag")])
+        self.assertEqual(self.doc()["state"], state)
+        self.assert_cli_rejects(("note", "--text", "x"), paused_message)  # a standalone note still is not valid
+        self.assert_valid()
+        return out["record_id"]
+
+    def test_flag_at_a_refusal_pause_leaves_it_pending(self):
         self.init("light")
         self.refuse()
-        self.assertEqual(self.assert_flag_rejected("--refs", "r-001", "--text", "x"), [PAUSED])
+        flag = self.assert_flag_keeps_the_pause(PAUSED)
+        nxt = self.reactivate()["next"]
+        self.assertEqual(nxt["action"], "invoke_satellite")
+        self.assertIn(flag, [r["id"] for r in ctx_of(nxt)["records"]])
+        self.assert_valid()
 
-    def test_rejected_at_an_ops_not_ready_pause(self):
+    def test_flag_at_an_ops_not_ready_pause_leaves_it_pending(self):
         self.init("light", *YORK_ROSTER)
         self.append(draft("punk-03-edison", "proposal"))
         self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
         self.append(draft("punk-06-york", "ops_log", ready_to_close=False))
-        self.assertEqual(self.assert_flag_rejected("--refs", "r-001", "--text", "x"), [OPS_PAUSED])
+        flag = self.assert_flag_keeps_the_pause(OPS_PAUSED)
+        self.assertEqual(self.decide("close")[0], 0)
+        self.assert_valid()
+        self.assertIn(flag, self.run_cli("report")[1]["record_ids"])
+
+    def test_next_and_status_name_the_record_that_raised_each_pause(self):
+        self.init("light", "--hitl-after-verdict", *YORK_ROSTER)
+        self.append(draft("punk-03-edison", "proposal"))
+
+        def check(out, kind):
+            requested = [e["payload"] for e in self.events() if e["type"] == "hitl_requested"][-1]
+            for nxt in (out["next"], self.run_cli("status")[1]["next"]):
+                self.assertEqual((nxt["kind"], nxt["record_id"]), (kind, requested["record_id"]))
+            return self.run_cli("show", requested["record_id"])[1]["records"][0]["type"]
+
+        self.assertEqual(check(self.append(refusal("punk-01-shaka")), "refusal"), "refusal")
+        self.reactivate()
+        out = self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        self.assertEqual(check(out, "approval"), "verdict")
+        self.run_cli("approve")
+        out = self.append(draft("punk-06-york", "ops_log", ready_to_close=False))
+        self.assertEqual(check(out, "ops_not_ready"), "ops_log")
 
     def test_rejected_on_a_terminal_mission(self):
         self.init("light")

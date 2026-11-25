@@ -378,13 +378,16 @@ class Mission:
             return {"phase": phase, "actor": None, "action": status}
         pause = self.pending_pause()
         if pause:
-            return {
+            info = {
                 "phase": phase,
                 "actor": "stella",
                 "action": "await_hitl",
                 "kind": pause["kind"],
                 "decisions": self.pause_decisions(pause["kind"]),
             }
+            if "record_id" in pause:  # the record that raised the pause
+                info["record_id"] = pause["record_id"]
+            return info
         return {"phase": phase, "actor": self.actor_for(phase), "action": "invoke_satellite"}
 
     # -- persistence -----------------------------------------------------
@@ -856,7 +859,9 @@ def write_stella_record(args, rtype: str) -> dict:
     if status != "active":
         raise EngineError(f"mission is {status}; {rtype}s can no longer be recorded")
     pause = m.pending_pause()
-    if pause and pause["kind"] != "approval":  # at the other pauses only the decision is valid
+    # A flag decides and advances nothing, so it is valid at any pause. At a refusal or
+    # ops_not_ready pause a standalone note is not: there stella's note travels with the decision.
+    if rtype == "note" and pause and pause["kind"] != "approval":
         m.require_no_pause()
     text = args.text if args.text is not None else read_note_file(args.text_file, rtype)
     if not text.strip():
