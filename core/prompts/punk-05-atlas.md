@@ -5,8 +5,8 @@ id: punk-05-atlas
 name: Atlas
 role: "Execution / brute force: high-volume work (mass code, assets, batches)"
 cognitive_bias: Throughput over elegance
-reads: [goal, finding, proposal, revision, verdict, approval, note]
-writes: [artifact, note]
+reads: [goal, finding, proposal, revision, verdict, approval, flag, note]
+writes: [artifact, flag, refusal, note]
 active_phases: [EXECUTION]
 ---
 

@@ -123,6 +123,38 @@ def check_schemas(ps, es):
     return errors
 
 
+def check_semantics(doc, events):
+    """Rules over a whole mission that the schemas cannot express."""
+    errors = []
+    seen = {}  # record id -> type, for records already read
+    resolved = set()
+    for rec in doc["records"]:
+        if rec["type"] == "verdict":
+            targets = [r["flag"] for r in rec.get("flag_resolutions", [])]
+            for target in targets:
+                if target not in seen:
+                    errors.append(f"verdict {rec['id']} resolves {target}, which does not appear earlier")
+                elif seen[target] != "flag":
+                    errors.append(f"verdict {rec['id']} resolves {target}, which is not a flag")
+            for rid, rtype in seen.items():
+                if rtype == "flag" and rid not in resolved and rid not in targets:
+                    errors.append(f"verdict {rec['id']} leaves flag {rid} unresolved")
+            resolved.update(targets)
+        seen[rec["id"]] = rec["type"]
+
+    current, limit = doc["state"]["research_round"], doc["mission"]["research_rounds"]
+    if current > limit:
+        errors.append(f"state.research_round {current} exceeds mission.research_rounds {limit}")
+    entries = [e for e in events if e["type"] == "phase_changed" and e["payload"].get("to") == "RESEARCH"]
+    if len(entries) != current:
+        errors.append(f"{len(entries)} events enter RESEARCH, but state.research_round is {current}")
+    for order, event in enumerate(entries, 1):
+        given = event["payload"].get("research_round", order)
+        if given != order:
+            errors.append(f"event seq {event['seq']}: research_round {given}, expected {order}")
+    return errors
+
+
 def check_examples(pv, ev):
     errors = []
     doc = load_json(SCHEMAS / "examples" / "punk-records.example.json")
@@ -146,7 +178,25 @@ def check_examples(pv, ev):
     written = [e["payload"]["record_id"] for e in events if e["type"] == "record_written"]
     if written != [r["id"] for r in doc["records"]]:
         errors.append("record_written events do not match the example records")
+    errors += check_semantics(doc, events)
     return errors, doc, events
+
+
+def with_record(doc, **fields):
+    """Copy of doc with one extra record, built from the goal record plus fields."""
+    d = copy.deepcopy(doc)
+    record = copy.deepcopy(d["records"][0])
+    record.update({"id": "r-900", "refs": [d["records"][0]["id"]]})
+    record.update(fields)
+    d["records"].append(record)
+    return d
+
+
+def with_event(events, source_type, **fields):
+    """Copy of the first event of source_type, with fields replaced."""
+    e = copy.deepcopy(next(x for x in events if x["type"] == source_type))
+    e.update(fields)
+    return e
 
 
 def check_negatives(pv, ev, doc, events):
@@ -183,10 +233,124 @@ def check_negatives(pv, ev, doc, events):
     d["records"][idx("proposal")]["blocking"] = True
     cases.append(("blocking on a proposal", pv, d))
 
+    d = copy.deepcopy(doc)
+    del d["records"][idx("finding")]["provenance"]
+    cases.append(("finding without provenance", pv, d))
+
+    d = copy.deepcopy(doc)
+    d["records"][idx("finding")].update(provenance="external", sources=[])
+    cases.append(("external finding with sources []", pv, d))
+
+    d = copy.deepcopy(doc)
+    d["records"][idx("finding")].update(provenance="internal", refs=[])
+    cases.append(("internal finding with refs []", pv, d))
+
+    d = copy.deepcopy(doc)
+    d["records"][idx("proposal")]["provenance"] = "internal"
+    cases.append(("provenance on a proposal", pv, d))
+
+    d = copy.deepcopy(doc)
+    d["records"][idx("finding")]["gaps"] = []
+    cases.append(("gaps []", pv, d))
+
+    d = with_record(doc, author="punk-05-atlas", type="refusal")
+    cases.append(("refusal without reason", pv, d))
+
+    d = with_record(doc, author="stella", type="refusal", reason="missing_input")
+    cases.append(("refusal written by stella", pv, d))
+
+    d = copy.deepcopy(doc)
+    d["records"][idx("flag")]["refs"] = []
+    cases.append(("flag without refs", pv, d))
+
+    d = with_record(doc, author="punk-06-york", type="ops_log")
+    cases.append(("ops_log without ready_to_close", pv, d))
+
+    d = with_record(doc, author="punk-05-atlas", type="artifact", ready_to_close=True)
+    cases.append(("ready_to_close on an artifact", pv, d))
+
+    d = copy.deepcopy(doc)
+    d["records"][idx("critique")]["flag_resolutions"] = copy.deepcopy(
+        d["records"][idx("verdict")]["flag_resolutions"]
+    )
+    cases.append(("flag_resolutions on a critique", pv, d))
+
+    d = copy.deepcopy(doc)
+    d["schema_version"] = "0.1.0"
+    cases.append(('schema_version "0.1.0"', pv, d))
+
+    e = with_event(events, "mission_completed", type="mission_incomplete", payload={})
+    cases.append(("mission_incomplete without reason", ev, e))
+
+    e = with_event(events, "hitl_requested")
+    del e["payload"]["kind"]
+    cases.append(("hitl_requested without kind", ev, e))
+
+    d = copy.deepcopy(doc)
+    d["records"][idx("finding")].update(provenance="unsourced", sources=d["records"][idx("finding")]["sources"][:1])
+    cases.append(("unsourced finding with a source", pv, d))
+
+    d = copy.deepcopy(doc)
+    d["records"][idx("finding")]["provenance"] = "recalled"
+    cases.append(('finding with provenance "recalled"', pv, d))
+
+    # Schema-valid mutations that only check_semantics can catch.
+    semantic = []
+
+    d = copy.deepcopy(doc)
+    d["records"][idx("verdict")]["flag_resolutions"].append(
+        {"flag": d["records"][idx("finding")]["id"], "decision": "dismissed"}
+    )
+    semantic.append(("flag_resolutions targets a non-flag record", d, "is not a flag"))
+
+    d = copy.deepcopy(doc)
+    del d["records"][idx("verdict")]["flag_resolutions"]
+    semantic.append(("flag left unresolved by the verdict", d, "unresolved"))
+
     errors = []
+    for label, instance, expected in semantic:
+        if not pv.is_valid(instance):
+            errors.append(f"semantic mutation is not schema-valid: {label}")
+        if not any(expected in e for e in check_semantics(instance, events)):
+            errors.append(f"semantic error not detected: {label}")
     for label, validator, instance in cases:
         if validator.is_valid(instance):
             errors.append(f"was accepted but must be rejected: {label}")
+    return errors, len(cases) + len(semantic)
+
+
+def check_positives(pv, ev, doc, events):
+    cases = []
+
+    d = with_record(doc, author="punk-05-atlas", type="refusal", reason="capability_mismatch")
+    cases.append(("refusal by punk-05-atlas", pv, d))
+
+    d = with_record(doc, author="stella", type="flag")
+    cases.append(("flag written by stella", pv, d))
+
+    d = with_record(doc, author="punk-06-york", type="ops_log", ready_to_close=False)
+    cases.append(("ops_log with ready_to_close false", pv, d))
+
+    d = copy.deepcopy(doc)
+    d["state"].update(phase="INCOMPLETE", status="incomplete")
+    cases.append(("state INCOMPLETE / incomplete", pv, d))
+
+    d = with_record(
+        doc, author="punk-04-pythagoras", type="finding", provenance="unsourced", sources=[], refs=[]
+    )
+    cases.append(("unsourced finding with sources [] and refs []", pv, d))
+
+    e = with_event(
+        events, "mission_completed", type="mission_incomplete", payload={"reason": "Work left unfinished."}
+    )
+    cases.append(("mission_incomplete with reason", ev, e))
+
+    e = with_event(events, "hitl_resolved", payload={"decision": "reactivate"})
+    cases.append(("hitl_resolved with decision reactivate", ev, e))
+
+    errors = []
+    for label, validator, instance in cases:
+        errors += [f"{label}: {e.message[:100]}" for e in validator.iter_errors(instance)]
     return errors, len(cases)
 
 
@@ -237,8 +401,8 @@ def check_prompts(ps, record_validator, all_types):
         else:  # stella is described in prose, not in the satellite table
             if sorted(fm.get("reads", [])) != sorted(all_types):
                 errors.append("stella: reads must be all record types")
-            if fm.get("writes") != ["goal", "approval", "note"]:
-                errors.append("stella: writes must be goal, approval, note")
+            if fm.get("writes") != ["goal", "approval", "flag", "note"]:
+                errors.append("stella: writes must be goal, approval, flag, note")
         if fm.get("active_phases") != phases.get(name):
             errors.append(f"{name}: active_phases {fm.get('active_phases')} != architecture.md {phases.get(name)}")
         body = text[match.end():]
@@ -331,6 +495,8 @@ def main():
     )
     report.check("e) core/ is domain-agnostic", check_domain_agnostic())
     report.check("f) official definition present verbatim", check_definition())
+    errors, n = check_positives(pv, ev, doc, events)
+    report.check("g) positive fixtures are accepted", errors, f"{n} fixtures")
 
     print("\nRESULT: " + ("FAIL" if report.failed else "PASS"))
     return 1 if report.failed else 0

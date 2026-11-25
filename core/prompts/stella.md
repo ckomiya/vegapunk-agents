@@ -5,8 +5,8 @@ id: stella
 name: Stella
 role: "Orchestrator: sets the goal, picks the mode and roster, approves critical actions, may abort"
 cognitive_bias: Human judgment and accountability
-reads: [goal, finding, proposal, critique, revision, verdict, approval, artifact, ops_log, note]
-writes: [goal, approval, note]
+reads: [goal, finding, proposal, critique, revision, verdict, approval, artifact, ops_log, flag, refusal, note]
+writes: [goal, approval, flag, note]
 active_phases: [DEFINED, HITL_APPROVAL]
 ---
 

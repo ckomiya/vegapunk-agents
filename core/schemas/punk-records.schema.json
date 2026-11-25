@@ -8,10 +8,10 @@
   "required": ["schema_version", "mission", "state", "records"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "const": "0.1.0" },
+    "schema_version": { "const": "0.3.0" },
     "mission": {
       "type": "object",
-      "required": ["id", "goal", "mode", "roster", "constraints", "max_iterations", "created_at"],
+      "required": ["id", "goal", "mode", "roster", "constraints", "max_iterations", "research_rounds", "created_at"],
       "additionalProperties": false,
       "properties": {
         "id": { "$ref": "#/$defs/id" },
@@ -26,17 +26,28 @@
         },
         "constraints": { "type": "array", "items": { "type": "string" } },
         "max_iterations": { "type": "integer", "minimum": 0, "default": 2 },
+        "research_rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Maximum number of times the mission may enter RESEARCH."
+        },
         "created_at": { "$ref": "#/$defs/timestamp" }
       }
     },
     "state": {
       "type": "object",
-      "required": ["phase", "iteration", "status", "updated_at"],
+      "required": ["phase", "iteration", "research_round", "status", "updated_at"],
       "additionalProperties": false,
       "properties": {
         "phase": { "$ref": "#/$defs/phase" },
         "iteration": { "type": "integer", "minimum": 0 },
-        "status": { "enum": ["active", "completed", "failed", "aborted"] },
+        "research_round": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of times the mission has entered RESEARCH."
+        },
+        "status": { "enum": ["active", "completed", "incomplete", "failed", "aborted"] },
         "updated_at": { "$ref": "#/$defs/timestamp" }
       }
     },
@@ -87,6 +98,7 @@
         "EXECUTION",
         "OPERATIONS",
         "COMPLETED",
+        "INCOMPLETE",
         "FAILED",
         "ABORTED"
       ]
@@ -102,6 +114,8 @@
         "approval",
         "artifact",
         "ops_log",
+        "flag",
+        "refusal",
         "note"
       ]
     },
@@ -130,6 +144,65 @@
           "type": "boolean",
           "description": "Critiques only. true if the critique raises issues that must be addressed before a verdict."
         },
+        "provenance": {
+          "enum": ["external", "internal", "unsourced"],
+          "description": "Findings only. external: backed by sources outside the mission; internal: derived from mission records (refs); unsourced: the satellite's own knowledge, with no citable source."
+        },
+        "sources": {
+          "type": "array",
+          "description": "Findings only. Sources behind the finding; at least one if provenance is external, none if provenance is unsourced.",
+          "items": {
+            "type": "object",
+            "required": ["locator", "access"],
+            "additionalProperties": false,
+            "properties": {
+              "locator": { "type": "string", "minLength": 1, "description": "URL or other locator of the source." },
+              "access": {
+                "enum": ["opened", "snippet"],
+                "description": "opened: the source itself was read; snippet: only an excerpt was seen."
+              }
+            }
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Findings only. Open questions that further research should answer.",
+          "items": {
+            "type": "object",
+            "required": ["question", "why_needed"],
+            "additionalProperties": false,
+            "properties": {
+              "question": { "type": "string", "minLength": 1, "description": "What is still unknown." },
+              "why_needed": { "type": "string", "minLength": 1, "description": "Why the mission needs the answer." }
+            }
+          }
+        },
+        "reason": {
+          "enum": ["capability_mismatch", "missing_input", "constraint_conflict"],
+          "description": "Refusals only. Why the satellite declines the task."
+        },
+        "flag_resolutions": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Verdicts only. Decision on each flag the verdict resolves.",
+          "items": {
+            "type": "object",
+            "required": ["flag", "decision"],
+            "additionalProperties": false,
+            "properties": {
+              "flag": { "$ref": "#/$defs/id", "description": "Id of the flag record." },
+              "decision": {
+                "enum": ["upheld", "dismissed"],
+                "description": "upheld: the flag stands; dismissed: it does not."
+              }
+            }
+          }
+        },
+        "ready_to_close": {
+          "type": "boolean",
+          "description": "Ops logs only. true if the mission can be closed."
+        },
         "created_at": { "$ref": "#/$defs/timestamp" }
       },
       "allOf": [
@@ -141,35 +214,81 @@
         {
           "if": { "properties": { "type": { "const": "verdict" } }, "required": ["type"] },
           "then": { "required": ["verdict"] },
-          "else": { "not": { "required": ["verdict"] } }
+          "else": {
+            "not": { "anyOf": [{ "required": ["verdict"] }, { "required": ["flag_resolutions"] }] }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "finding" } }, "required": ["type"] },
+          "then": { "required": ["provenance", "sources"] },
+          "else": {
+            "not": {
+              "anyOf": [{ "required": ["provenance"] }, { "required": ["sources"] }, { "required": ["gaps"] }]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "finding" }, "provenance": { "const": "external" } },
+            "required": ["type", "provenance"]
+          },
+          "then": { "properties": { "sources": { "minItems": 1 } } }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "finding" }, "provenance": { "const": "internal" } },
+            "required": ["type", "provenance"]
+          },
+          "then": { "properties": { "refs": { "minItems": 1 } } }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "finding" }, "provenance": { "const": "unsourced" } },
+            "required": ["type", "provenance"]
+          },
+          "then": { "properties": { "sources": { "maxItems": 0 } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "refusal" } }, "required": ["type"] },
+          "then": { "required": ["reason"] },
+          "else": { "not": { "required": ["reason"] } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "flag" } }, "required": ["type"] },
+          "then": { "properties": { "refs": { "minItems": 1 } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "ops_log" } }, "required": ["type"] },
+          "then": { "required": ["ready_to_close"] },
+          "else": { "not": { "required": ["ready_to_close"] } }
         },
         {
           "if": { "properties": { "author": { "const": "stella" } }, "required": ["author"] },
-          "then": { "properties": { "type": { "enum": ["goal", "approval", "note"] } } }
+          "then": { "properties": { "type": { "enum": ["goal", "approval", "flag", "note"] } } }
         },
         {
           "if": { "properties": { "author": { "const": "punk-01-shaka" } }, "required": ["author"] },
-          "then": { "properties": { "type": { "enum": ["verdict", "note"] } } }
+          "then": { "properties": { "type": { "enum": ["verdict", "flag", "refusal", "note"] } } }
         },
         {
           "if": { "properties": { "author": { "const": "punk-02-lilith" } }, "required": ["author"] },
-          "then": { "properties": { "type": { "enum": ["critique", "note"] } } }
+          "then": { "properties": { "type": { "enum": ["critique", "flag", "refusal", "note"] } } }
         },
         {
           "if": { "properties": { "author": { "const": "punk-03-edison" } }, "required": ["author"] },
-          "then": { "properties": { "type": { "enum": ["proposal", "revision", "note"] } } }
+          "then": { "properties": { "type": { "enum": ["proposal", "revision", "flag", "refusal", "note"] } } }
         },
         {
           "if": { "properties": { "author": { "const": "punk-04-pythagoras" } }, "required": ["author"] },
-          "then": { "properties": { "type": { "enum": ["finding", "note"] } } }
+          "then": { "properties": { "type": { "enum": ["finding", "flag", "refusal", "note"] } } }
         },
         {
           "if": { "properties": { "author": { "const": "punk-05-atlas" } }, "required": ["author"] },
-          "then": { "properties": { "type": { "enum": ["artifact", "note"] } } }
+          "then": { "properties": { "type": { "enum": ["artifact", "flag", "refusal", "note"] } } }
         },
         {
           "if": { "properties": { "author": { "const": "punk-06-york" } }, "required": ["author"] },
-          "then": { "properties": { "type": { "enum": ["ops_log", "note"] } } }
+          "then": { "properties": { "type": { "enum": ["ops_log", "flag", "refusal", "note"] } } }
         }
       ]
     }

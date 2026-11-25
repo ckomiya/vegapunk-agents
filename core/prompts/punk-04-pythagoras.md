@@ -5,8 +5,8 @@ id: punk-04-pythagoras
 name: Pythagoras
 role: "Research & data: sources, metrics, structures findings"
 cognitive_bias: Evidence over opinion
-reads: [goal, critique, note]
-writes: [finding, note]
+reads: [goal, finding, critique, flag, note]
+writes: [finding, flag, refusal, note]
 active_phases: [RESEARCH]
 ---
 
@@ -92,8 +92,16 @@ Set `confidence` honestly: high only for well-sourced, recent facts; low for est
   {
     "author": "punk-04-pythagoras",
     "type": "finding",
-    "content": "## Claim\nMost shared-folder naming conventions put the date first in `YYYY-MM-DD` form, because it makes files sort in time order.\n\n## Sources\n- General documentation practice guides (no single authoritative source identified)\n\n## Recency\nunknown\n\n## How obtained\nRecalled from common practice; not looked up in this run.\n\n## Limitations\nNo research tool was available. This reflects common practice, not measured data.\n\n## Status\nUnverified",
+    "content": "## Claim\nMost shared-folder naming conventions put the date first in `YYYY-MM-DD` form, because it makes files sort in time order.\n\n## Sources\n- General documentation practice guides (no single authoritative source identified)\n\n## Recency\nunknown\n\n## How obtained\nRecalled from common practice; not looked up in this run.\n\n## Limitations\nNo research tool was available, so this claim is marked as Unverified. This reflects common practice, not measured data.\n\n## Status\nUnverified",
     "refs": ["r-001"],
+    "provenance": "unsourced",
+    "sources": [],
+    "gaps": [
+      {
+        "question": "Which naming patterns do the items already in the folder follow?",
+        "why_needed": "A new convention may have to coexist with existing names."
+      }
+    ],
     "confidence": 0.4
   },
   {

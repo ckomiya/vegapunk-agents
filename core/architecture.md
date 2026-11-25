@@ -21,14 +21,14 @@ The pattern combines three ideas: a blackboard-style shared memory (`punk-record
 
 | Canonical id | Name | Role | Cognitive bias | Reads | Writes |
 |---|---|---|---|---|---|
-| `punk-01-shaka` | Shaka | Logic & architecture: validates coherence, rules and security; issues the final verdict | Rigor and consistency | all | `verdict`, `note` |
-| `punk-02-lilith` | Lilith | Critique / red teaming: devil's advocate, finds flaws and biases | Skepticism | `goal`, `finding`, `proposal`, `critique`, `revision`, `note` | `critique`, `note` |
-| `punk-03-edison` | Edison | Ideation & strategy: unfiltered brainstorming, initial solution design, revisions | Divergent optimism | `goal`, `finding`, `proposal`, `critique`, `revision`, `verdict`, `note` | `proposal`, `revision`, `note` |
-| `punk-04-pythagoras` | Pythagoras | Research & data: sources, metrics, structures findings | Evidence over opinion | `goal`, `critique`, `note` | `finding`, `note` |
-| `punk-05-atlas` | Atlas | Execution / brute force: high-volume work (mass code, assets, batches) | Throughput over elegance | `goal`, `finding`, `proposal`, `revision`, `verdict`, `approval`, `note` | `artifact`, `note` |
-| `punk-06-york` | York | Operations & maintenance: cleanup, formatting, logs, deliverable checks | Tidiness and completeness | all | `ops_log`, `note` |
+| `punk-01-shaka` | Shaka | Logic & architecture: validates coherence, rules and security; issues the final verdict | Rigor and consistency | all | `verdict`, `flag`, `refusal`, `note` |
+| `punk-02-lilith` | Lilith | Critique / red teaming: devil's advocate, finds flaws and biases | Skepticism | `goal`, `finding`, `proposal`, `critique`, `revision`, `flag`, `note` | `critique`, `flag`, `refusal`, `note` |
+| `punk-03-edison` | Edison | Ideation & strategy: unfiltered brainstorming, initial solution design, revisions | Divergent optimism | `goal`, `finding`, `proposal`, `critique`, `revision`, `verdict`, `flag`, `note` | `proposal`, `revision`, `flag`, `refusal`, `note` |
+| `punk-04-pythagoras` | Pythagoras | Research & data: sources, metrics, structures findings | Evidence over opinion | `goal`, `finding`, `critique`, `flag`, `note` | `finding`, `flag`, `refusal`, `note` |
+| `punk-05-atlas` | Atlas | Execution / brute force: high-volume work (mass code, assets, batches) | Throughput over elegance | `goal`, `finding`, `proposal`, `revision`, `verdict`, `approval`, `flag`, `note` | `artifact`, `flag`, `refusal`, `note` |
+| `punk-06-york` | York | Operations & maintenance: cleanup, formatting, logs, deliverable checks | Tidiness and completeness | all | `ops_log`, `flag`, `refusal`, `note` |
 
-`stella` reads all records and writes `goal`, `approval` and `note`.
+`stella` reads all records and writes `goal`, `approval`, `flag` and `note`.
 
 ## Communication rule (hard)
 
@@ -64,6 +64,8 @@ The pattern combines three ideas: a blackboard-style shared memory (`punk-record
 | `approval` | Human approval of a critical action | `stella` |
 | `artifact` | Produced deliverable or batch output | `punk-05-atlas` |
 | `ops_log` | Cleanup, formatting, log or deliverable-check report | `punk-06-york` |
+| `flag` | Marks earlier records as suspect; Shaka resolves every flag before a verdict. MUST reference at least one record | any author |
+| `refusal` | A satellite declines the task it was given and says why (`reason`) | any satellite |
 | `note` | Free-form remark that fits no other type | any author |
 
 The schema enforces this table: a record whose author may not write its type is invalid.

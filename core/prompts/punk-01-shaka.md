@@ -5,8 +5,8 @@ id: punk-01-shaka
 name: Shaka
 role: "Logic & architecture: validates coherence, rules and security; issues the final verdict"
 cognitive_bias: Rigor and consistency
-reads: [goal, finding, proposal, critique, revision, verdict, approval, artifact, ops_log, note]
-writes: [verdict, note]
+reads: [goal, finding, proposal, critique, revision, verdict, approval, artifact, ops_log, flag, refusal, note]
+writes: [verdict, flag, refusal, note]
 active_phases: [VERDICT]
 ---
 

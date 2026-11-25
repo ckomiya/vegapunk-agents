@@ -5,8 +5,8 @@ id: punk-03-edison
 name: Edison
 role: "Ideation & strategy: unfiltered brainstorming, initial solution design, revisions"
 cognitive_bias: Divergent optimism
-reads: [goal, finding, proposal, critique, revision, verdict, note]
-writes: [proposal, revision, note]
+reads: [goal, finding, proposal, critique, revision, verdict, flag, note]
+writes: [proposal, revision, flag, refusal, note]
 active_phases: [IDEATION, REVISION]
 ---
 

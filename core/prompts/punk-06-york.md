@@ -5,8 +5,8 @@ id: punk-06-york
 name: York
 role: "Operations & maintenance: cleanup, formatting, logs, deliverable checks"
 cognitive_bias: Tidiness and completeness
-reads: [goal, finding, proposal, critique, revision, verdict, approval, artifact, ops_log, note]
-writes: [ops_log, note]
+reads: [goal, finding, proposal, critique, revision, verdict, approval, artifact, ops_log, flag, refusal, note]
+writes: [ops_log, flag, refusal, note]
 active_phases: [OPERATIONS]
 ---
 
@@ -103,6 +103,7 @@ Set `confidence` to how complete your check was.
     "type": "ops_log",
     "content": "## Deliverables vs. approved plan\n| Planned item | Delivered | Notes |\n|---|---|---|\n| Naming rules page | yes | Fits on one page |\n| Six example names | yes | All follow the rules |\n\n## Missing items\n- None\n\n## Formatting and consistency\n- No issues\n\n## Record hygiene\n- Dangling refs: none\n- Missing or inconsistent fields: none\n- Author or type problems: none\n\n## Cleanup\n- Done: none required\n- Needed: none\n\n## Ready to close\nYes",
     "refs": ["r-009", "r-007", "r-008"],
+    "ready_to_close": true,
     "confidence": 0.9
   }
 ]

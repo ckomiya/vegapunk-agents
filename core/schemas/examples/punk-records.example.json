@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.1.0",
+  "schema_version": "0.3.0",
   "mission": {
     "id": "mission-0001",
     "goal": "Design a naming convention for internal API endpoints.",
@@ -10,13 +10,15 @@
       "Must be explainable in under one page."
     ],
     "max_iterations": 2,
+    "research_rounds": 2,
     "created_at": "2026-11-20T10:00:00Z"
   },
   "state": {
     "phase": "COMPLETED",
     "iteration": 1,
+    "research_round": 2,
     "status": "completed",
-    "updated_at": "2026-11-20T10:19:00Z"
+    "updated_at": "2026-11-20T10:22:00Z"
   },
   "records": [
     {
@@ -35,76 +37,113 @@
       "type": "finding",
       "phase": "RESEARCH",
       "iteration": 0,
-      "content": "Common conventions use plural nouns for collections (`/orders`), lowercase kebab-case path segments, and verbs only for actions that do not map to resources. Versioning is most often a path prefix (`/v1/`). Event names usually follow `domain.entity.past-tense-verb`.",
+      "content": "Common REST conventions use plural nouns for collections (`/orders`), lowercase kebab-case path segments, and verbs only for actions that do not map to resources. Versioning is most often a path prefix (`/v1/`).",
       "refs": ["r-001"],
+      "provenance": "external",
+      "sources": [
+        { "locator": "https://example.org/api-style-guide", "access": "opened" },
+        { "locator": "https://example.com/forum/endpoint-versioning", "access": "snippet" }
+      ],
+      "gaps": [
+        {
+          "question": "How are event names usually structured?",
+          "why_needed": "The convention must also work for event-style endpoints, and this finding covers only REST paths."
+        }
+      ],
       "confidence": 0.8,
       "created_at": "2026-11-20T10:03:00Z"
     },
     {
       "id": "r-003",
+      "author": "punk-04-pythagoras",
+      "type": "finding",
+      "phase": "RESEARCH",
+      "iteration": 0,
+      "content": "Event names usually follow `domain.entity.past-tense-verb`, for example `billing.invoice.created`.",
+      "refs": ["r-001", "r-002"],
+      "provenance": "external",
+      "sources": [
+        { "locator": "https://example.org/event-naming-guide", "access": "opened" }
+      ],
+      "confidence": 0.8,
+      "created_at": "2026-11-20T10:05:00Z"
+    },
+    {
+      "id": "r-004",
       "author": "punk-03-edison",
       "type": "proposal",
       "phase": "IDEATION",
       "iteration": 0,
       "content": "Proposal:\n1. Paths: `/v{major}/{domain}/{collection}/{id}`, lowercase kebab-case, plural collections.\n2. Actions: `POST /v1/{domain}/{collection}/{id}:{action}`.\n3. Events: `{domain}.{entity}.{past-tense-verb}`.\n4. Every endpoint is documented in one table: name, path, owner.",
-      "refs": ["r-001", "r-002"],
+      "refs": ["r-001", "r-002", "r-003"],
       "confidence": 0.6,
-      "created_at": "2026-11-20T10:06:00Z"
+      "created_at": "2026-11-20T10:08:00Z"
     },
     {
-      "id": "r-004",
+      "id": "r-005",
       "author": "punk-02-lilith",
       "type": "critique",
       "phase": "CRITIQUE",
       "iteration": 0,
       "content": "Blocking issues:\n- The `:{action}` suffix is a special character that some gateways and proxies treat inconsistently; it is not justified by the findings.\n- No rule for how a domain name is chosen or renamed, so the `{domain}` segment will drift.\n\nNon-blocking: the one-page limit is not checked.",
-      "refs": ["r-003"],
+      "refs": ["r-004"],
       "blocking": true,
-      "created_at": "2026-11-20T10:09:00Z"
+      "created_at": "2026-11-20T10:11:00Z"
     },
     {
-      "id": "r-005",
+      "id": "r-006",
+      "author": "punk-02-lilith",
+      "type": "flag",
+      "phase": "CRITIQUE",
+      "iteration": 0,
+      "content": "Suspect source in r-002: `https://example.com/forum/endpoint-versioning` is a forum thread seen only as a snippet, so it cannot be relied on for the claim about versioning.",
+      "refs": ["r-002"],
+      "created_at": "2026-11-20T10:11:30Z"
+    },
+    {
+      "id": "r-007",
       "author": "punk-03-edison",
       "type": "revision",
       "phase": "REVISION",
       "iteration": 1,
       "content": "Revision:\n1. Paths unchanged.\n2. Actions: `POST /v1/{domain}/{collection}/{id}/{action-verb}` with a kebab-case verb, replacing the `:` suffix.\n3. Domains come from a short registry file; renaming a domain requires a new major version.\n4. Events unchanged.\nThe full convention fits on one page.",
-      "refs": ["r-003", "r-004"],
+      "refs": ["r-004", "r-005"],
       "confidence": 0.75,
-      "created_at": "2026-11-20T10:12:00Z"
+      "created_at": "2026-11-20T10:14:00Z"
     },
     {
-      "id": "r-006",
+      "id": "r-008",
       "author": "punk-02-lilith",
       "type": "critique",
       "phase": "CRITIQUE",
       "iteration": 1,
       "content": "Both blocking issues are resolved. Remaining risk: the registry needs an owner. Non-blocking; no further revision required.",
-      "refs": ["r-005", "r-004"],
+      "refs": ["r-007", "r-005"],
       "blocking": false,
-      "created_at": "2026-11-20T10:14:00Z"
+      "created_at": "2026-11-20T10:16:00Z"
     },
     {
-      "id": "r-007",
+      "id": "r-009",
       "author": "punk-01-shaka",
       "type": "verdict",
       "phase": "VERDICT",
       "iteration": 1,
-      "content": "The revision is internally consistent, matches the findings and satisfies both constraints. The registry owner is a follow-up, not a blocker.",
-      "refs": ["r-005", "r-006"],
+      "content": "The revision is internally consistent, matches the findings and satisfies both constraints. The registry owner is a follow-up, not a blocker.\n\nFlag r-006 is dismissed: the claim about versioning in r-002 is also backed by the style guide, which was opened, so it does not depend on the forum snippet.",
+      "refs": ["r-007", "r-008", "r-006"],
       "verdict": "APPROVED",
+      "flag_resolutions": [{ "flag": "r-006", "decision": "dismissed" }],
       "confidence": 0.9,
-      "created_at": "2026-11-20T10:16:00Z"
+      "created_at": "2026-11-20T10:18:00Z"
     },
     {
-      "id": "r-008",
+      "id": "r-010",
       "author": "stella",
       "type": "approval",
       "phase": "HITL_APPROVAL",
       "iteration": 1,
       "content": "Approved. I will own the domain registry.",
-      "refs": ["r-007"],
-      "created_at": "2026-11-20T10:18:30Z"
+      "refs": ["r-009"],
+      "created_at": "2026-11-20T10:21:00Z"
     }
   ]
 }
