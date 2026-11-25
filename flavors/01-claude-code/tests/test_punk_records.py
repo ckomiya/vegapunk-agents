@@ -29,6 +29,10 @@ EVENT_VALIDATOR = load_schema("event.schema.json")
 
 def draft(author, rtype, content="Content.", refs=None, **extra):
     d = {"author": author, "type": rtype, "content": content, "refs": refs or []}
+    if rtype == "finding":
+        d.update(provenance="unsourced", sources=[])
+    elif rtype == "ops_log":
+        d.update(ready_to_close=True)
     d.update(extra)
     return d
 
@@ -535,11 +539,12 @@ class ContextTests(Base):
                    "iteration": riter, "content": f"{rtype} {i}", "refs": refs, **extra, "created_at": ts}
             full.append(rec)
         doc = {
-            "schema_version": "0.1.0",
+            "schema_version": "0.3.0",
             "mission": {"id": "m-hand", "goal": "G", "mode": "standard", "constraints": [],
                         "roster": roster or ["punk-04-pythagoras", "punk-03-edison", "punk-02-lilith", "punk-01-shaka"],
-                        "max_iterations": 2, "created_at": ts},
-            "state": {"phase": phase, "iteration": iteration, "status": "active", "updated_at": ts},
+                        "max_iterations": 2, "research_rounds": 1, "created_at": ts},
+            "state": {"phase": phase, "iteration": iteration, "research_round": 1, "status": "active",
+                      "updated_at": ts},
             "records": full,
         }
         self.assertEqual([], [e.message for e in RECORDS_VALIDATOR.iter_errors(doc)])
@@ -577,8 +582,8 @@ class ContextTests(Base):
                                             "content_chars": sum(len(r["content"]) for r in out["records"])})
         self.assertEqual(out["mission"], {"goal": "G", "mode": "standard", "constraints": [],
                                           "roster": ["punk-04-pythagoras", "punk-03-edison", "punk-02-lilith", "punk-01-shaka"],
-                                          "max_iterations": 2})
-        self.assertEqual(out["state"], {"phase": "RESEARCH", "iteration": 0})
+                                          "max_iterations": 2, "research_rounds": 1})
+        self.assertEqual(out["state"], {"phase": "RESEARCH", "iteration": 0, "research_round": 1})
 
     def test_2_edison_in_revision_selects_recent_iterations_and_refs(self):
         self.loop_to_revision_2()
@@ -595,7 +600,7 @@ class ContextTests(Base):
         self.append(draft("punk-02-lilith", "critique", blocking=True))
         out = self.context()
         self.assertEqual(out["satellite"], "punk-01-shaka")
-        self.assertEqual(out["state"], {"phase": "VERDICT", "iteration": 2})
+        self.assertEqual(out["state"], {"phase": "VERDICT", "iteration": 2, "research_round": 1})
         self.assertIn("r-006", self.ids(out))  # blocking critique of iteration 0, cited by no one
         self.assertNotIn("r-003", self.ids(out))
 
@@ -1116,6 +1121,127 @@ class NoteTests(Base):
         code, ctx = self.run_cli("context")
         self.assertEqual(ctx_of(out["next"]), ctx)
         self.assertIn("r-002", [r["id"] for r in ctx["records"]])
+
+
+class ResearchRoundTests(Base):
+    def entries(self):
+        return [e["payload"] for e in self.events()
+                if e["type"] == "phase_changed" and e["payload"]["to"] == "RESEARCH"]
+
+    def test_research_rounds_defaults_to_1(self):
+        self.init("light")
+        self.assertEqual(self.doc()["mission"]["research_rounds"], 1)
+
+    def test_research_rounds_is_saved(self):
+        self.init("standard", "--research-rounds", "3")
+        self.assertEqual(self.doc()["mission"]["research_rounds"], 3)
+        self.assert_valid()
+
+    def test_research_rounds_below_1_is_rejected(self):
+        for value in ("0", "-2"):
+            code, out = self.run_cli("init", "--goal", "G", "--mode", "standard",
+                                     "--mission-dir", str(self.dir), "--research-rounds", value)
+            self.assertNotEqual(code, 0, value)
+            self.assertTrue(any("--research-rounds" in e for e in out["errors"]), out)
+            self.assertFalse(self.dir.exists())
+
+    def test_entering_research_counts_the_round_once(self):
+        self.init("standard", "--research-rounds", "3")
+        self.assertEqual(self.doc()["state"]["research_round"], 1)
+        self.assertEqual(self.entries(), [{"from": "DEFINED", "to": "RESEARCH", "research_round": 1}])
+        gap = {"question": "Q?", "why_needed": "W."}
+        out = self.append(draft("punk-04-pythagoras", "finding", gaps=[gap]))
+        self.assertEqual(out["next"]["phase"], "IDEATION")  # no repeated rounds yet
+        doc, _ = self.assert_valid()
+        self.assertEqual(doc["state"]["research_round"], 1)
+        self.assertEqual(len(self.entries()), 1)
+
+    def test_skipped_research_keeps_round_0(self):
+        self.init("light")
+        self.assertEqual(self.doc()["state"]["research_round"], 0)
+        self.assertEqual(self.entries(), [])
+
+    def test_context_carries_research_rounds_and_round(self):
+        out = self.init("standard", "--research-rounds", "2")
+        for ctx in (ctx_of(out["next"]), self.run_cli("context")[1]):
+            self.assertEqual(ctx["mission"]["research_rounds"], 2)
+            self.assertEqual(ctx["state"]["research_round"], 1)
+
+
+class RecordFieldTests(Base):
+    REFUSAL_MESSAGE = "refusal handling is not implemented yet"
+
+    def test_hitl_requested_kind_is_approval(self):
+        self.init("light", "--hitl-after-verdict")
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        requested = [e for e in self.events() if e["type"] == "hitl_requested"]
+        self.assertEqual([e["payload"]["kind"] for e in requested], ["approval"])
+        self.assert_valid()
+
+    def test_refusal_draft_is_rejected_for_now(self):
+        self.init("light")
+        refusal = draft("punk-03-edison", "refusal", reason="missing_input")
+        for drafts in ([refusal], [draft("punk-03-edison", "proposal"), refusal]):
+            errors = self.append_error(json.dumps(drafts))
+            self.assertTrue(any(self.REFUSAL_MESSAGE in e for e in errors), errors)
+        self.assertEqual(self.run_cli("status")[1]["phase"], "IDEATION")
+
+    def test_flag_with_refs_is_accepted_alongside_the_main_record(self):
+        self.init("light")
+        out = self.append(draft("punk-03-edison", "flag", "Goal is ambiguous.", refs=["r-001"]),
+                          draft("punk-03-edison", "proposal"))
+        self.assertEqual(out["next"]["phase"], "VERDICT")
+        doc, _ = self.assert_valid()
+        self.assertEqual([r["type"] for r in doc["records"]], ["goal", "flag", "proposal"])
+
+    def test_flag_without_refs_is_rejected(self):
+        self.init("light")
+        errors = self.append_error(json.dumps([draft("punk-03-edison", "proposal"),
+                                               draft("punk-03-edison", "flag")]))
+        self.assertTrue(any("schema violation" in e for e in errors), errors)
+
+    def test_flag_alone_does_not_complete_the_phase(self):
+        self.init("light")
+        errors = self.append_error(json.dumps([draft("punk-03-edison", "flag", refs=["r-001"])]))
+        self.assertTrue(any("must produce" in e for e in errors), errors)
+
+    def test_new_fields_are_copied_to_the_records(self):
+        self.init("full")
+        finding = {"provenance": "external",
+                   "sources": [{"locator": "https://example.org/a", "access": "opened"}],
+                   "gaps": [{"question": "Q?", "why_needed": "W."}]}
+        self.append(draft("punk-04-pythagoras", "finding", **finding))
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-02-lilith", "critique", blocking=False),
+                    draft("punk-02-lilith", "flag", refs=["r-002"]))
+        resolutions = [{"flag": "r-005", "decision": "dismissed"}]
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED", flag_resolutions=resolutions))
+        self.run_cli("approve")
+        self.append(draft("punk-05-atlas", "artifact"))
+        self.append(draft("punk-06-york", "ops_log"))
+        doc, _ = self.assert_valid()
+        self.assertEqual(doc["state"]["status"], "completed")
+        by_type = {r["type"]: r for r in doc["records"]}
+        self.assertEqual({k: by_type["finding"][k] for k in finding}, finding)
+        self.assertEqual(by_type["verdict"]["flag_resolutions"], resolutions)
+        self.assertIs(by_type["ops_log"]["ready_to_close"], True)
+
+    def test_schema_invalid_fields_change_nothing(self):
+        self.init("standard")
+        no_provenance = draft("punk-04-pythagoras", "finding")
+        del no_provenance["provenance"]
+        for drafts in (
+            [no_provenance],
+            [draft("punk-04-pythagoras", "finding", provenance="external")],  # no sources
+            [draft("punk-04-pythagoras", "finding", gaps=[])],
+            [draft("punk-04-pythagoras", "finding", ready_to_close=True)],
+            [draft("punk-04-pythagoras", "finding"),
+             draft("punk-04-pythagoras", "note", reason="missing_input")],
+        ):
+            errors = self.append_error(json.dumps(drafts))
+            self.assertTrue(any("schema violation" in e for e in errors), errors)
+        self.assertEqual(self.run_cli("status")[1]["phase"], "RESEARCH")
 
 
 if __name__ == "__main__":

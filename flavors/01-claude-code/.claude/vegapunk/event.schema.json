@@ -25,6 +25,7 @@
         "hitl_requested",
         "hitl_resolved",
         "mission_completed",
+        "mission_incomplete",
         "mission_failed",
         "mission_aborted"
       ]
@@ -55,8 +56,15 @@
             "required": ["from", "to"],
             "properties": {
               "from": { "$ref": "#/$defs/phase" },
-              "to": { "$ref": "#/$defs/phase" }
-            }
+              "to": { "$ref": "#/$defs/phase" },
+              "research_round": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Research round being entered, when 'to' is RESEARCH."
+              }
+            },
+            "if": { "properties": { "to": { "const": "RESEARCH" } }, "required": ["to"] },
+            "then": { "required": ["research_round"] }
           }
         }
       }
@@ -95,9 +103,13 @@
       "then": {
         "properties": {
           "payload": {
-            "required": ["reason"],
+            "required": ["reason", "kind"],
             "properties": {
               "reason": { "type": "string" },
+              "kind": {
+                "enum": ["approval", "refusal", "ops_not_ready"],
+                "description": "What stella is asked to decide on."
+              },
               "record_id": { "$ref": "#/$defs/id" }
             }
           }
@@ -111,14 +123,14 @@
           "actor": { "const": "stella" },
           "payload": {
             "required": ["decision"],
-            "properties": { "decision": { "enum": ["approved", "aborted"] } }
+            "properties": { "decision": { "enum": ["approved", "aborted", "reactivate", "incomplete", "close"] } }
           }
         }
       }
     },
     {
       "if": {
-        "properties": { "type": { "enum": ["mission_failed", "mission_aborted"] } },
+        "properties": { "type": { "enum": ["mission_incomplete", "mission_failed", "mission_aborted"] } },
         "required": ["type"]
       },
       "then": {
@@ -181,6 +193,7 @@
         "EXECUTION",
         "OPERATIONS",
         "COMPLETED",
+        "INCOMPLETE",
         "FAILED",
         "ABORTED"
       ]
@@ -196,6 +209,8 @@
         "approval",
         "artifact",
         "ops_log",
+        "flag",
+        "refusal",
         "note"
       ]
     }

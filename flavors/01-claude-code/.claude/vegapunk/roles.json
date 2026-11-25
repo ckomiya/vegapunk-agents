@@ -12,11 +12,14 @@
       "approval",
       "artifact",
       "ops_log",
+      "flag",
+      "refusal",
       "note"
     ],
     "writes": [
       "goal",
       "approval",
+      "flag",
       "note"
     ],
     "active_phases": [
@@ -35,10 +38,14 @@
       "approval",
       "artifact",
       "ops_log",
+      "flag",
+      "refusal",
       "note"
     ],
     "writes": [
       "verdict",
+      "flag",
+      "refusal",
       "note"
     ],
     "active_phases": [
@@ -52,10 +59,13 @@
       "proposal",
       "critique",
       "revision",
+      "flag",
       "note"
     ],
     "writes": [
       "critique",
+      "flag",
+      "refusal",
       "note"
     ],
     "active_phases": [
@@ -70,11 +80,14 @@
       "critique",
       "revision",
       "verdict",
+      "flag",
       "note"
     ],
     "writes": [
       "proposal",
       "revision",
+      "flag",
+      "refusal",
       "note"
     ],
     "active_phases": [
@@ -85,11 +98,15 @@
   "punk-04-pythagoras": {
     "reads": [
       "goal",
+      "finding",
       "critique",
+      "flag",
       "note"
     ],
     "writes": [
       "finding",
+      "flag",
+      "refusal",
       "note"
     ],
     "active_phases": [
@@ -104,10 +121,13 @@
       "revision",
       "verdict",
       "approval",
+      "flag",
       "note"
     ],
     "writes": [
       "artifact",
+      "flag",
+      "refusal",
       "note"
     ],
     "active_phases": [
@@ -125,10 +145,14 @@
       "approval",
       "artifact",
       "ops_log",
+      "flag",
+      "refusal",
       "note"
     ],
     "writes": [
       "ops_log",
+      "flag",
+      "refusal",
       "note"
     ],
     "active_phases": [

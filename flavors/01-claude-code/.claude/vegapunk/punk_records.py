@@ -29,7 +29,7 @@ RECORDS_FILE = "punk-records.json"
 EVENTS_FILE = "events.jsonl"
 ENGINE_FILE = "engine.json"
 
-SCHEMA_VERSION = "0.1.0"
+SCHEMA_VERSION = "0.3.0"
 SATELLITES = [
     "punk-01-shaka",
     "punk-02-lilith",
@@ -67,8 +67,14 @@ PHASE_PRODUCES = {
 }
 TERMINAL = {"COMPLETED", "FAILED", "ABORTED"}
 DEFAULT_SEARCH_LIMIT = 3
+DEFAULT_RESEARCH_ROUNDS = 1
 DRAFT_WORDS = 250
-DRAFT_FIELDS = {"author", "type", "content", "refs", "confidence", "blocking", "verdict"}
+# Optional record fields a draft may set; the schema decides which record type takes which.
+RECORD_EXTRAS = (
+    "confidence", "verdict", "blocking", "provenance", "sources", "gaps", "reason",
+    "flag_resolutions", "ready_to_close",
+)
+DRAFT_FIELDS = {"author", "type", "content", "refs", *RECORD_EXTRAS}
 DRAFT_REQUIRED = {"author", "type", "content", "refs"}
 RUNTIME_FIELDS = {"id", "phase", "iteration", "created_at"}
 
@@ -253,7 +259,7 @@ class Mission:
             "content": content,
             "refs": refs,
         }
-        for key in ("confidence", "verdict", "blocking"):
+        for key in RECORD_EXTRAS:
             if key in extra:
                 rec[key] = extra[key]
         rec["created_at"] = self.ts
@@ -269,13 +275,18 @@ class Mission:
         state["updated_at"] = self.ts
         if to == "REVISION":
             state["iteration"] += 1
-        self.add_event("phase_changed", "system", {"from": frm, "to": to})
+        payload = {"from": frm, "to": to}
+        if to == "RESEARCH":
+            state["research_round"] += 1
+            payload["research_round"] = state["research_round"]
+        self.add_event("phase_changed", "system", payload)
         satellite = self.actor_for(to)
         if satellite:
             self.add_event("satellite_activated", satellite, {"phase": to})
         if to == "HITL_APPROVAL":
             verdict = self.last_record("verdict")
             payload = {
+                "kind": "approval",
                 "reason": (
                     "Approve the verdict before punk-05-atlas starts execution."
                     if "punk-05-atlas" in self.roster
@@ -408,6 +419,8 @@ def cmd_init(args) -> dict:
         errors.append("--max-iterations must be >= 0")
     if args.search_limit < 0:
         errors.append("--search-limit must be >= 0")
+    if args.research_rounds < 1:
+        errors.append("--research-rounds must be >= 1")
     roster = list(args.roster) if args.roster else list(DEFAULT_ROSTERS[args.mode])
     bad = [r for r in roster if r not in SATELLITES]
     if bad:
@@ -433,9 +446,10 @@ def cmd_init(args) -> dict:
             "roster": roster,
             "constraints": list(args.constraint or []),
             "max_iterations": args.max_iterations,
+            "research_rounds": args.research_rounds,
             "created_at": ts,
         },
-        "state": {"phase": "DEFINED", "iteration": 0, "status": "active", "updated_at": ts},
+        "state": {"phase": "DEFINED", "iteration": 0, "research_round": 0, "status": "active", "updated_at": ts},
         "records": [],
     }
     engine = {
@@ -508,8 +522,12 @@ def validate_drafts(m: Mission, text: str) -> list[dict]:
         if "author" in d and author != actor:
             errors.append(f"{tag}: author {author!r} is not the active satellite {actor!r} for {phase}")
         if "type" in d:
-            if rtype not in (produced, "note"):
-                errors.append(f"{tag}: type {rtype!r} is not allowed in {phase} (expected {produced!r} or 'note')")
+            if rtype == "refusal":  # temporary stop until the refusal pause exists
+                errors.append(f"{tag}: refusal handling is not implemented yet in this version of the script")
+            elif rtype not in (produced, "note", "flag"):
+                errors.append(
+                    f"{tag}: type {rtype!r} is not allowed in {phase} (expected {produced!r}, 'note' or 'flag')"
+                )
             elif rtype not in m.roles[actor]["writes"]:
                 errors.append(f"{tag}: {actor} may not write {rtype!r}")
             counts[rtype] = counts.get(rtype, 0) + 1
@@ -558,8 +576,7 @@ def cmd_append(args) -> dict:
     phase, actor = m.phase, m.actor_for(m.phase)
     written = []
     for d in drafts:
-        extra = {k: d[k] for k in ("confidence", "blocking", "verdict") if k in d}
-        written.append(m.add_record(d["author"], d["type"], d["content"], d["refs"], extra))
+        written.append(m.add_record(d["author"], d["type"], d["content"], d["refs"], d))
     m.add_event("satellite_idle", actor, {"phase": phase})
 
     main_rec = next(r for r in written if r["type"] == PHASE_PRODUCES[phase])
@@ -911,8 +928,11 @@ def build_context(m: Mission, satellite: str, full: bool, include: list[str]) ->
     return {
         "ok": True,
         "satellite": satellite,
-        "mission": {k: mission[k] for k in ("goal", "mode", "roster", "constraints", "max_iterations")},
-        "state": {"phase": m.phase, "iteration": m.iteration},
+        "mission": {
+            k: mission[k]
+            for k in ("goal", "mode", "roster", "constraints", "max_iterations", "research_rounds")
+        },
+        "state": {"phase": m.phase, "iteration": m.iteration, "research_round": m.doc["state"]["research_round"]},
         "runtime_limits": {
             "web_searches": m.search_limit,
             "draft_words": m.draft_words,
@@ -950,6 +970,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--mode", required=True, choices=["light", "standard", "full"])
     p.add_argument("--roster", nargs="+", metavar="ID")
     p.add_argument("--max-iterations", type=int, default=2)
+    p.add_argument("--research-rounds", type=int, default=DEFAULT_RESEARCH_ROUNDS, metavar="N",
+                   help="max entries into RESEARCH, at least 1 (default: 1)")
     p.add_argument("--hitl-after-verdict", action="store_true")
     p.add_argument("--draft-words", type=int, default=DRAFT_WORDS, metavar="N",
                    help="approximate max words per draft (default: 250)")

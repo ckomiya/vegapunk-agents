@@ -40,11 +40,11 @@ def default_events():
     sat = "punk-01-shaka"
     return [
         event(1, "10:00:00", "mission_started", "stella", {"mode": "light", "roster": [sat]}),
-        event(2, "10:00:10", "phase_changed", "stella", {"from": "DEFINED", "to": "RESEARCH"}),
+        event(2, "10:00:10", "phase_changed", "stella", {"from": "DEFINED", "to": "RESEARCH", "research_round": 1}),
         event(3, "10:00:20", "satellite_activated", sat, {"phase": "RESEARCH"}),
         event(4, "10:01:00", "satellite_idle", sat, {"phase": "RESEARCH"}),
         event(5, "10:01:10", "phase_changed", "stella", {"from": "RESEARCH", "to": "VERDICT"}),
-        event(6, "10:01:20", "hitl_requested", "system", {"reason": "approval"}),
+        event(6, "10:01:20", "hitl_requested", "system", {"reason": "approval", "kind": "approval"}),
         event(7, "10:01:50", "hitl_resolved", "stella", {"decision": "approved"}),
         event(8, "10:02:00", "mission_completed", "stella"),
     ]
@@ -291,6 +291,12 @@ class MeasureTests(unittest.TestCase):
         names = sorted(["REPORT", "EXECUTION", "SETUP", "DEFINED", "HITL_APPROVAL", "IDEATION"],
                        key=mm.phase_sort_key)
         self.assertEqual(names, ["SETUP", "DEFINED", "IDEATION", "HITL_APPROVAL", "EXECUTION", "REPORT"])
+
+    def test_mission_incomplete_is_a_terminal_event(self):
+        events = default_events()[:-1] + [
+            event(8, "10:02:00", "mission_incomplete", "system", {"reason": "stopped"})]
+        s = Fixture(self.root, events=events, state={"iteration": 0}).measure()["summary"]
+        self.assertEqual((s["status"], s["total_seconds"]), ("incomplete", 120.0))
 
     # helpers
     @staticmethod

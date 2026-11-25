@@ -35,9 +35,10 @@ DEFAULT_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
 MARGIN = timedelta(seconds=5)
 TIER_LIMIT = 100_000
-TERMINAL_EVENTS = {"mission_completed", "mission_failed", "mission_aborted"}
+TERMINAL_EVENTS = {"mission_completed", "mission_incomplete", "mission_failed", "mission_aborted"}
 TERMINAL_STATUS = {
     "mission_completed": "completed",
+    "mission_incomplete": "incomplete",
     "mission_failed": "failed",
     "mission_aborted": "aborted",
 }
@@ -500,7 +501,7 @@ def build_summary(label, mission_id, mission, state, tl: Timeline, calls: list[C
 
 PHASE_ORDER = [
     "SETUP", "DEFINED", "RESEARCH", "IDEATION", "CRITIQUE", "REVISION", "VERDICT",
-    "HITL_APPROVAL", "EXECUTION", "OPERATIONS", "COMPLETED", "FAILED", "ABORTED", "REPORT",
+    "HITL_APPROVAL", "EXECUTION", "OPERATIONS", "COMPLETED", "INCOMPLETE", "FAILED", "ABORTED", "REPORT",
 ]
 
 
