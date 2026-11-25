@@ -80,6 +80,23 @@ Examples:
 - **Stella:** "Who is Stella here?" (who decides?)
 - **Punk Records:** "Is it in Punk Records?" (was the decision recorded?)
 
+## When not to use it
+
+A team of satellites is not always the right tool. For a short, one-pass task, a single agent is enough.
+
+In one comparison on the same task, 3 runs of a single agent (Sonnet 5.5) cost US$0.15-0.26, against US$2.31 for one run of the Claude Code team (9 to 15 times more). Other full team runs varied between US$1.41 and US$3.89, so the order of magnitude is the defensible part. All three single-agent runs recommended the same as the team and met 8/8 sections and 3/3 experiments.
+
+What the team adds is labeled claims, critique, approval, verification and an auditable record (Punk Records). It is a trade-off, not superiority.
+
+Caveats:
+
+- One task only.
+- The Claude Code implementation uses a model as coordinator; with a coordinator written in code, the cost difference could be smaller.
+- The rubric and the partially blind reading were done by a model.
+- Decision quality was not measured.
+
+Other flavors are not measured yet, so nothing is claimed about them. Details: [Post 2](https://dev.to/ckomiya/six-agents-one-blackboard-what-i-saw-in-their-blocks-refusals-and-verdicts-24ck).
+
 ## Flavors
 
 A flavor is an implementation of the `core/` spec on a specific runtime.
@@ -130,6 +147,12 @@ vegapunk-agents/
 - [ ] Phase 3 — LangGraph flavor + Startup Validator demo
 - [ ] Phase 4 — Egghead Monitor visualizer
 - [ ] Phase 5 — CrewAI & Anthropic SDK flavors
+
+## Posts
+
+- Post 1 (EN): [Why my AI agents don't talk to each other: the Vegapunk pattern](https://dev.to/ckomiya/why-my-ai-agents-dont-talk-to-each-other-the-vegapunk-pattern-4i49)
+- Post 2 (EN): [Six agents, one blackboard: what I saw in their blocks, refusals and verdicts](https://dev.to/ckomiya/six-agents-one-blackboard-what-i-saw-in-their-blocks-refusals-and-verdicts-24ck)
+- Post 2 (ES): [Seis agentes, una pizarra: lo que vi en sus bloqueos, negativas y veredictos](https://dev.to/ckomiya/seis-agentes-una-pizarra-lo-que-vi-en-sus-bloqueos-negativas-y-veredictos-28e4)
 
 ## Contributing
 
