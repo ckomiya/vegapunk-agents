@@ -28,7 +28,7 @@ The canonical output contract in `_shared-protocol.md` is a JSON array of record
 | File | Purpose |
 |---|---|
 | `_shared-protocol.md` | Shared preamble and output contract for all satellites |
-| `stella.md` | Part A: guide for the human orchestrator. Part B: optional AI coordinator prompt |
+| `stella.md` | Part A: guide for the human orchestrator. Part B: optional AI coordinator prompt (Compass) |
 | `punk-01-shaka.md` | Logic & architecture; issues the verdict |
 | `punk-02-lilith.md` | Critique / red teaming |
 | `punk-03-edison.md` | Ideation & strategy; proposals and revisions |
