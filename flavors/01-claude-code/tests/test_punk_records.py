@@ -15,7 +15,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 VEGAPUNK_DIR = Path(__file__).resolve().parent.parent / ".claude" / "vegapunk"
 SCRIPT = VEGAPUNK_DIR / "punk_records.py"
-TERMINAL_EVENTS = {"mission_completed", "mission_failed", "mission_aborted"}
+TERMINAL_EVENTS = {"mission_completed", "mission_incomplete", "mission_failed", "mission_aborted"}
 
 
 def load_schema(name: str) -> Draft202012Validator:
@@ -35,6 +35,10 @@ def draft(author, rtype, content="Content.", refs=None, **extra):
         d.update(ready_to_close=True)
     d.update(extra)
     return d
+
+
+APPROVAL_PAUSE = {"phase": "HITL_APPROVAL", "actor": "stella", "action": "await_hitl",
+                  "kind": "approval", "decisions": ["approve", "abort"]}
 
 
 def without_context(nxt):
@@ -151,7 +155,7 @@ class LifecycleTests(Base):
         self.init("light", "--hitl-after-verdict")
         self.append(draft("punk-03-edison", "proposal"))
         out = self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
-        self.assertEqual(out["next"], {"phase": "HITL_APPROVAL", "actor": "stella", "action": "await_hitl"})
+        self.assertEqual(out["next"], APPROVAL_PAUSE)
         events = self.events()
         requested = [e for e in events if e["type"] == "hitl_requested"]
         self.assertEqual(requested[0]["payload"]["record_id"], "r-003")
@@ -214,7 +218,7 @@ class LifecycleTests(Base):
         self.append(draft("punk-03-edison", "proposal"))
         self.append(draft("punk-02-lilith", "critique", blocking=False))
         out = self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
-        self.assertEqual(out["next"], {"phase": "HITL_APPROVAL", "actor": "stella", "action": "await_hitl"})
+        self.assertEqual(out["next"], APPROVAL_PAUSE)
         self.assertTrue(self.append_error(json.dumps([draft("punk-05-atlas", "artifact")])))  # no drafts at HITL
         out = self.run_cli("approve")[1]
         self.assertEqual(without_context(out["next"]), {"phase": "EXECUTION", "actor": "punk-05-atlas", "action": "invoke_satellite"})
@@ -1121,13 +1125,16 @@ class NoteTests(Base):
         self.run_cli("fail", "--reason", "x")
         self.assertNotEqual(self.note("--text", "Late.")[0], 0)
 
-    def test_valid_at_await_hitl_without_context(self):
+    def test_rejected_while_paused_at_approval(self):
         self.init("light", "--hitl-after-verdict")
         self.append(draft("punk-03-edison", "proposal"))
         self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        before = self.snapshot()
         code, out = self.note("--text", "One more thing.")
-        self.assertEqual(code, 0, out)
-        self.assertEqual(out["next"], {"phase": "HITL_APPROVAL", "actor": "stella", "action": "await_hitl"})
+        self.assertNotEqual(code, 0)
+        self.assertEqual(out["errors"], ["mission paused: waiting for stella's decision (kind: approval)"])
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.run_cli("status")[1]["next"], APPROVAL_PAUSE)
         self.assert_valid()
 
     def test_next_context_includes_the_note(self):
@@ -1187,8 +1194,6 @@ class ResearchRoundTests(Base):
 
 
 class RecordFieldTests(Base):
-    REFUSAL_MESSAGE = "refusal handling is not implemented yet"
-
     def test_hitl_requested_kind_is_approval(self):
         self.init("light", "--hitl-after-verdict")
         self.append(draft("punk-03-edison", "proposal"))
@@ -1196,14 +1201,6 @@ class RecordFieldTests(Base):
         requested = [e for e in self.events() if e["type"] == "hitl_requested"]
         self.assertEqual([e["payload"]["kind"] for e in requested], ["approval"])
         self.assert_valid()
-
-    def test_refusal_draft_is_rejected_for_now(self):
-        self.init("light")
-        refusal = draft("punk-03-edison", "refusal", reason="missing_input")
-        for drafts in ([refusal], [draft("punk-03-edison", "proposal"), refusal]):
-            errors = self.append_error(json.dumps(drafts))
-            self.assertTrue(any(self.REFUSAL_MESSAGE in e for e in errors), errors)
-        self.assertEqual(self.run_cli("status")[1]["phase"], "IDEATION")
 
     def test_flag_with_refs_is_accepted_alongside_the_main_record(self):
         self.init("light")
@@ -1267,7 +1264,7 @@ class RecordFieldTests(Base):
 
 class SchemaVersionTests(Base):
     OLD = ("mission was written with schema 0.1.0; this script reads 0.3.0; "
-           "missions from earlier versions are not read (start a new mission)")
+           "missions written with a different schema version are not read (start a new mission)")
     MISSING = "mission has no schema_version; this script reads 0.3.0 (start a new mission)"
     COMMANDS = (
         ("status",),
@@ -1277,6 +1274,7 @@ class SchemaVersionTests(Base):
         ("append", "--draft-file", "-"),
         ("note", "--text", "x"),
         ("approve",),
+        ("decide", "--decision", "reactivate", "--note", "x"),
         ("abort", "--reason", "x"),
         ("fail", "--reason", "x"),
         ("report",),
@@ -1462,10 +1460,349 @@ class DraftFieldTests(Base):
                 self.assert_rejected([self.verdict(resolutions)], message)
         self.assertEqual(self.run_cli("status")[1]["phase"], "VERDICT")
 
+    def test_non_string_type_or_author_is_a_draft_error(self):
+        self.init("light")
+        for bad in (["proposal"], {"a": 1}, 3, None):
+            with self.subTest(value=bad):
+                self.assert_rejected([draft("punk-03-edison", bad)], "draft[0]: 'type' must be a string")
+                self.assert_rejected([draft(bad, "proposal")], "draft[0]: 'author' must be a string")
+
     def test_schema_still_rejects_what_the_draft_checks_do_not_cover(self):
         self.init("light")
         errors = self.append_error(json.dumps([draft("punk-03-edison", "proposal", confidence=2)]))
         self.assertTrue(any("schema violation" in e for e in errors), errors)
+
+
+PAUSED = "mission paused: waiting for stella's decision (kind: refusal)"
+REASONS = ("capability_mismatch", "missing_input", "constraint_conflict")
+
+
+def refusal(author, reason="missing_input", content="I cannot do this: input is missing.", **extra):
+    return draft(author, "refusal", content, reason=reason, **extra)
+
+
+class RefusalBase(Base):
+    def refuse(self, author="punk-03-edison", **extra):
+        return self.append(refusal(author, **extra))
+
+    def decide(self, *args):
+        return self.run_cli("decide", "--decision", *args)
+
+    def reactivate(self, note="Use the goal as it is."):
+        code, out = self.decide("reactivate", "--note", note)
+        self.assertEqual(code, 0, out)
+        return out
+
+    def incomplete(self, reason="Good enough, not complete."):
+        code, out = self.decide("incomplete", "--reason", reason)
+        self.assertEqual(code, 0, out)
+        return out
+
+    def assert_cli_rejects(self, args, message, stdin=None):
+        before = self.snapshot()
+        code, out = self.run_cli(*args, stdin=stdin)
+        self.assertNotEqual(code, 0, out)
+        self.assertEqual(out, {"ok": False, "errors": [message]})
+        self.assertEqual(self.snapshot(), before)
+
+    def sequence(self, start=0):
+        """Compact view of the events: (type, actor, the payload value that tells them apart)."""
+        keys = ("record_type", "decision", "kind", "to", "phase", "mode", "reason")
+        return [(e["type"], e["actor"], next((e["payload"][k] for k in keys if k in e["payload"]), None))
+                for e in self.events()[start:]]
+
+
+class RefusalDraftTests(RefusalBase):
+    def test_refusal_alone_is_accepted_for_each_reason_and_pauses(self):
+        for number, reason in enumerate(REASONS):
+            with self.subTest(reason=reason):
+                self.dir = Path(self._tmp.name) / f"m-{number}"
+                self.init("light")
+                state = self.doc()["state"]
+                out = self.refuse(reason=reason)
+                self.assertEqual(out["next"], {
+                    "phase": "IDEATION", "actor": "stella", "action": "await_hitl", "kind": "refusal",
+                    "decisions": ["reactivate", "incomplete", "abort"],
+                })
+                doc, events = self.assert_valid()
+                self.assertEqual(doc["state"], state)
+                self.assertEqual(doc["records"][-1]["reason"], reason)
+                self.assertEqual(events[-1]["payload"], {"kind": "refusal", "reason": reason, "record_id": "r-002"})
+                self.assertEqual(self.sequence(-3), [
+                    ("record_written", "punk-03-edison", "refusal"),
+                    ("satellite_idle", "punk-03-edison", "IDEATION"),
+                    ("hitl_requested", "system", "refusal"),
+                ])
+                self.assertEqual(self.run_cli("status")[1]["next"], out["next"])
+
+    def test_refusal_may_come_with_flag_and_note(self):
+        self.init("light")
+        out = self.append(draft("punk-03-edison", "flag", "Suspect.", refs=["r-001"]),
+                          refusal("punk-03-edison"), draft("punk-03-edison", "note", "Also."))
+        self.assertEqual(out["next"]["kind"], "refusal")
+        doc, events = self.assert_valid()
+        self.assertEqual([r["type"] for r in doc["records"]], ["goal", "flag", "refusal", "note"])
+        self.assertEqual(events[-1]["payload"]["record_id"], "r-003")
+
+    def test_refusal_with_the_main_record_is_rejected(self):
+        self.init("light")
+        errors = self.append_error(json.dumps([draft("punk-03-edison", "proposal"), refusal("punk-03-edison")]))
+        self.assertEqual(errors, ["write the expected proposal or a refusal, not both"])
+
+    def test_two_refusals_are_rejected(self):
+        self.init("light")
+        errors = self.append_error(json.dumps([refusal("punk-03-edison")] * 2))
+        self.assertEqual(errors, ["only one 'refusal' record is allowed per append"])
+
+    def test_invalid_reason_or_empty_content_is_rejected(self):
+        self.init("light")
+        no_reason = refusal("punk-03-edison")
+        del no_reason["reason"]
+        message = "draft[0]: a refusal requires 'reason' capability_mismatch, missing_input or constraint_conflict"
+        for bad in (no_reason, refusal("punk-03-edison", reason="bored"), refusal("punk-03-edison", reason=["x"])):
+            self.assertEqual(self.append_error(json.dumps([bad])), [message])
+        for content in ("", " \n "):
+            errors = self.append_error(json.dumps([refusal("punk-03-edison", content=content)]))
+            self.assertEqual(errors, ["draft[0]: a refusal requires a non-empty 'content'"])
+
+    def test_refusal_from_a_satellite_that_is_not_active_is_rejected(self):
+        self.init("light")
+        errors = self.append_error(json.dumps([refusal("punk-01-shaka")]))
+        self.assertTrue(any("is not the active satellite" in e for e in errors), errors)
+
+
+class RefusalPauseTests(RefusalBase):
+    def setUp(self):
+        super().setUp()
+        self.init("light")
+        self.refuse()
+
+    def test_commands_that_write_or_advance_are_rejected(self):
+        proposal = json.dumps([draft("punk-03-edison", "proposal")])
+        for args in (("append", "--draft-file", "-"), ("note", "--text", "x"), ("approve",),
+                     ("context",), ("context", "--write"), ("fail", "--reason", "x")):
+            with self.subTest(command=args):
+                self.assert_cli_rejects(args, PAUSED, stdin=proposal)
+        self.assertEqual(self.doc()["state"]["phase"], "IDEATION")
+
+    def test_read_only_commands_and_report_still_work(self):
+        records, events = self.doc(), self.events()
+        code, status = self.run_cli("status")
+        self.assertEqual((code, status["next"]["action"]), (0, "await_hitl"))
+        self.assertNotIn("context_file", status["next"])
+        self.assertEqual(self.run_cli("show", "r-002")[1]["records"][0]["type"], "refusal")
+        for command in ("timeline", "sources"):
+            proc = subprocess.run([sys.executable, str(SCRIPT), command, "--mission-dir", str(self.dir)],
+                                  capture_output=True, text=True, encoding="utf-8")
+            self.assertEqual(proc.returncode, 0, proc.stdout)
+        code, out = self.run_cli("report")
+        self.assertEqual(code, 0, out)
+        self.assertEqual((out["status"], out["record_ids"]), ("active", ["r-002"]))
+        text = (self.dir / "deliverable.md").read_text(encoding="utf-8")
+        self.assertIn("- Status: active (paused: refusal)", text)
+        self.assertNotIn("Recorded reason", text)
+        self.assertEqual((self.doc(), self.events()), (records, events))
+
+    def test_reactivate_without_a_note_is_rejected(self):
+        message = "reactivate requires a non-empty note (--note or --note-file)"
+        for extra in ((), ("--note", ""), ("--note", "  ")):
+            self.assert_cli_rejects(("decide", "--decision", "reactivate", *extra), message)
+        self.assert_cli_rejects(("decide", "--decision", "reactivate", "--note", "n", "--reason", "r"),
+                                "--reason is only valid with --decision incomplete")
+
+    def test_reactivate_records_the_decision_then_the_note_then_the_activation(self):
+        start = len(self.events())
+        out = self.reactivate("Use the goal as it is.")
+        self.assertEqual((out["next"]["phase"], out["next"]["actor"], out["next"]["action"]),
+                         ("IDEATION", "punk-03-edison", "invoke_satellite"))
+        self.assertEqual(self.sequence(start), [
+            ("hitl_resolved", "stella", "reactivate"),
+            ("record_written", "stella", "note"),
+            ("satellite_activated", "punk-03-edison", "IDEATION"),
+        ])
+        doc, _ = self.assert_valid()
+        note = doc["records"][-1]
+        self.assertEqual((note["author"], note["type"], note["content"], note["refs"]),
+                         ("stella", "note", "Use the goal as it is.", ["r-002"]))
+        self.assertEqual(doc["state"]["phase"], "IDEATION")
+        self.assertEqual(self.append(draft("punk-03-edison", "proposal"))["next"]["phase"], "VERDICT")
+        self.assert_valid()
+
+    def test_reactivate_with_a_note_file(self):
+        path = Path(self._tmp.name) / "n.txt"
+        path.write_bytes(b"Line one\n\nLine two\n")
+        code, out = self.decide("reactivate", "--note-file", str(path))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.doc()["records"][-1]["content"], "Line one\n\nLine two")
+
+    def test_second_refusal_in_the_same_entry_cannot_be_reactivated(self):
+        self.reactivate()
+        out = self.refuse()
+        self.assertEqual(out["next"]["decisions"], ["incomplete", "abort"])
+        self.assert_cli_rejects(
+            ("decide", "--decision", "reactivate", "--note", "Again."),
+            "punk-03-edison was already reactivated in this entry into IDEATION; only incomplete or abort are valid",
+        )
+        self.assertEqual(self.incomplete()["next"]["action"], "incomplete")
+        self.assert_valid()
+
+    def test_abort_after_the_reactivation_is_used(self):
+        self.reactivate()
+        self.refuse()
+        self.assertEqual(self.run_cli("abort", "--reason", "Stop")[1]["next"]["action"], "aborted")
+        self.assert_valid()
+
+    def test_abort_during_the_pause_resolves_it_first(self):
+        start = len(self.events())
+        code, out = self.run_cli("abort", "--reason", "Stop")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.sequence(start), [
+            ("hitl_resolved", "stella", "aborted"),
+            ("phase_changed", "system", "ABORTED"),
+            ("mission_aborted", "system", "Stop"),
+        ])
+        self.assert_valid()
+
+    def test_incomplete_requires_a_reason_and_takes_no_note(self):
+        message = "incomplete requires a non-empty --reason"
+        for extra in ((), ("--reason", " ")):
+            self.assert_cli_rejects(("decide", "--decision", "incomplete", *extra), message)
+        self.assert_cli_rejects(("decide", "--decision", "incomplete", "--reason", "r", "--note", "n"),
+                                "--note and --note-file are only valid with --decision reactivate")
+
+    def test_incomplete_is_terminal(self):
+        start = len(self.events())
+        out = self.incomplete("Stopping here.")
+        self.assertEqual(out["next"], {"phase": "INCOMPLETE", "actor": None, "action": "incomplete"})
+        self.assertEqual(self.sequence(start), [
+            ("hitl_resolved", "stella", "incomplete"),
+            ("phase_changed", "system", "INCOMPLETE"),
+            ("mission_incomplete", "system", "Stopping here."),
+        ])
+        doc, events = self.assert_valid()  # exactly one terminal event, and it is the last
+        self.assertEqual((doc["state"]["phase"], doc["state"]["status"]), ("INCOMPLETE", "incomplete"))
+        self.assertEqual(events[-1]["payload"], {"reason": "Stopping here."})
+        self.assertEqual(self.run_cli("status")[1]["next"], out["next"])
+        before = self.snapshot()
+        for args in (("append", "--draft-file", "-"), ("note", "--text", "x"), ("approve",), ("context",),
+                     ("decide", "--decision", "reactivate", "--note", "x"),
+                     ("decide", "--decision", "incomplete", "--reason", "x"),
+                     ("abort", "--reason", "x"), ("fail", "--reason", "x")):
+            with self.subTest(command=args):
+                code, result = self.run_cli(*args, stdin=json.dumps([draft("punk-03-edison", "proposal")]))
+                self.assertNotEqual(code, 0, result)
+                self.assertFalse(result["ok"])
+        self.assertEqual(self.snapshot(), before)
+
+
+class RefusalFlowTests(RefusalBase):
+    def test_decide_needs_a_refusal_pause(self):
+        message = "decide is only valid while a refusal pause is pending"
+        self.init("light", "--hitl-after-verdict")
+        self.assert_cli_rejects(("decide", "--decision", "incomplete", "--reason", "x"), message)
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))  # approval pause
+        self.assert_cli_rejects(("decide", "--decision", "incomplete", "--reason", "x"), message)
+
+    def test_a_new_entry_into_the_phase_restores_the_reactivation(self):
+        self.init("standard")
+        self.append(draft("punk-04-pythagoras", "finding"))
+        self.append(draft("punk-03-edison", "proposal"))
+        self.refuse("punk-02-lilith")
+        self.reactivate()
+        self.append(draft("punk-02-lilith", "critique", blocking=True))
+        self.append(draft("punk-03-edison", "revision"))  # second entry into CRITIQUE
+        out = self.refuse("punk-02-lilith")
+        self.assertEqual(out["next"]["decisions"], ["reactivate", "incomplete", "abort"])
+        self.reactivate()
+        self.assert_valid()
+
+    def test_reactivated_satellite_gets_the_note_and_the_refusal_only_if_it_reads_it(self):
+        self.init("standard")
+        self.refuse("punk-04-pythagoras")  # r-002
+        nxt = self.reactivate()["next"]  # note r-003
+        for ctx in (ctx_of(nxt), self.run_cli("context")[1]):
+            self.assertEqual([r["id"] for r in ctx["records"]], ["r-001", "r-003"])
+        self.append(draft("punk-04-pythagoras", "finding"))
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-02-lilith", "critique", blocking=False))
+        self.refuse("punk-01-shaka")  # r-007
+        nxt = self.reactivate()["next"]  # note r-008
+        ids = [r["id"] for r in ctx_of(nxt)["records"]]
+        self.assertIn("r-007", ids)
+        self.assertIn("r-008", ids)
+
+    def test_report_of_an_incomplete_mission(self):
+        self.init("full")
+        self.append(draft("punk-04-pythagoras", "finding"))
+        self.append(draft("punk-03-edison", "proposal", content="Plan body."))
+        self.append(draft("punk-02-lilith", "critique", blocking=False))
+        self.append(draft("punk-01-shaka", "verdict", content="Approved plan.", verdict="APPROVED"))
+        self.run_cli("approve")
+        self.refuse("punk-05-atlas", content="No write access.", reason="capability_mismatch")
+        self.incomplete("Execution is not possible here.")
+        code, out = self.run_cli("report")
+        self.assertEqual(code, 0, out)
+        self.assertEqual((out["status"], out["record_ids"]), ("incomplete", ["r-005", "r-007"]))
+        text = (self.dir / "deliverable.md").read_text(encoding="utf-8")
+        for part in ("- Status: incomplete", "Approved plan.", "No write access.",
+                     "## Recorded reason\n\nExecution is not possible here."):
+            self.assertIn(part, text)
+        self.assertNotIn("Status: completed", text)
+        self.assertNotIn("Plan body.", text)
+
+    def test_report_of_an_incomplete_mission_without_verdict(self):
+        self.init("light")
+        self.refuse()
+        self.incomplete()
+        self.assertEqual(self.run_cli("report")[1]["record_ids"], ["r-002"])
+
+    def test_event_sequence_with_a_refusal_and_a_reactivation(self):
+        self.init("light")
+        self.refuse()
+        self.reactivate()
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        self.assertEqual(self.doc()["state"]["status"], "completed")
+        self.assert_valid()
+        self.assertEqual(self.sequence(), [
+            ("mission_started", "stella", "light"),
+            ("record_written", "stella", "goal"),
+            ("phase_changed", "system", "IDEATION"),
+            ("satellite_activated", "punk-03-edison", "IDEATION"),
+            ("record_written", "punk-03-edison", "refusal"),
+            ("satellite_idle", "punk-03-edison", "IDEATION"),
+            ("hitl_requested", "system", "refusal"),
+            ("hitl_resolved", "stella", "reactivate"),
+            ("record_written", "stella", "note"),
+            ("satellite_activated", "punk-03-edison", "IDEATION"),
+            ("record_written", "punk-03-edison", "proposal"),
+            ("satellite_idle", "punk-03-edison", "IDEATION"),
+            ("phase_changed", "system", "VERDICT"),
+            ("satellite_activated", "punk-01-shaka", "VERDICT"),
+            ("record_written", "punk-01-shaka", "verdict"),
+            ("satellite_idle", "punk-01-shaka", "VERDICT"),
+            ("phase_changed", "system", "COMPLETED"),
+            ("mission_completed", "system", None),
+        ])
+
+    def test_event_sequence_with_a_refusal_and_incomplete(self):
+        self.init("light")
+        self.refuse()
+        self.incomplete("Stopping here.")
+        self.assert_valid()
+        self.assertEqual(self.sequence(), [
+            ("mission_started", "stella", "light"),
+            ("record_written", "stella", "goal"),
+            ("phase_changed", "system", "IDEATION"),
+            ("satellite_activated", "punk-03-edison", "IDEATION"),
+            ("record_written", "punk-03-edison", "refusal"),
+            ("satellite_idle", "punk-03-edison", "IDEATION"),
+            ("hitl_requested", "system", "refusal"),
+            ("hitl_resolved", "stella", "incomplete"),
+            ("phase_changed", "system", "INCOMPLETE"),
+            ("mission_incomplete", "system", "Stopping here."),
+        ])
 
 
 if __name__ == "__main__":

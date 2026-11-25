@@ -65,7 +65,10 @@ PHASE_PRODUCES = {
     "EXECUTION": "artifact",
     "OPERATIONS": "ops_log",
 }
-TERMINAL = {"COMPLETED", "FAILED", "ABORTED"}
+TERMINAL = {"COMPLETED", "INCOMPLETE", "FAILED", "ABORTED"}
+# State status of the terminal phases reached through Mission.terminate().
+TERMINATED_STATUS = {"INCOMPLETE": "incomplete", "FAILED": "failed", "ABORTED": "aborted"}
+TERMINAL_EVENTS = ("mission_completed", "mission_incomplete", "mission_failed", "mission_aborted")
 DEFAULT_SEARCH_LIMIT = 3
 DEFAULT_RESEARCH_ROUNDS = 1
 DRAFT_WORDS = 250
@@ -89,6 +92,7 @@ TYPE_ONLY_FIELDS = {
 PROVENANCES = ("external", "internal", "unsourced")
 SOURCE_ACCESS = ("opened", "snippet")
 FLAG_DECISIONS = ("upheld", "dismissed")
+REFUSAL_REASONS = ("capability_mismatch", "missing_input", "constraint_conflict")
 
 
 class EngineError(Exception):
@@ -248,6 +252,39 @@ class Mission:
                 return cand
         return "COMPLETED"
 
+    # -- pause (derived from the events, never stored) -------------------
+    def pending_pause(self) -> dict | None:
+        """Payload of the hitl_requested event that has no later hitl_resolved."""
+        pause = None
+        for event in self.events:
+            if event["type"] == "hitl_requested":
+                pause = event["payload"]
+            elif event["type"] == "hitl_resolved":
+                pause = None
+        return pause
+
+    def require_no_pause(self) -> None:
+        pause = self.pending_pause()
+        if pause:
+            raise EngineError(f"mission paused: waiting for stella's decision (kind: {pause['kind']})")
+
+    def reactivation_used(self) -> bool:
+        """True if the active satellite was already reactivated in this entry into the phase."""
+        for event in reversed(self.events):
+            if event["type"] == "phase_changed":
+                break
+            if event["type"] == "hitl_resolved" and event["payload"]["decision"] == "reactivate":
+                return True
+        return False
+
+    def pause_decisions(self, kind: str) -> list[str]:
+        """The commands or `decide` values stella may use at a pause right now."""
+        if kind == "approval":
+            return ["approve", "abort"]
+        if kind == "refusal":
+            return ([] if self.reactivation_used() else ["reactivate"]) + ["incomplete", "abort"]
+        return ["abort"]
+
     # -- mutation (in memory) -------------------------------------------
     def add_event(self, etype: str, actor: str, payload: dict) -> None:
         self.events.append(
@@ -313,7 +350,7 @@ class Mission:
             self.add_event("mission_completed", "system", {})
 
     def terminate(self, to: str, event: str, reason: str, extra: dict | None = None) -> None:
-        self.doc["state"]["status"] = {"FAILED": "failed", "ABORTED": "aborted"}[to]
+        self.doc["state"]["status"] = TERMINATED_STATUS[to]
         self.go(to)
         self.add_event(event, "system", {"reason": reason, **(extra or {})})
 
@@ -335,14 +372,17 @@ class Mission:
     def _next_info(self) -> dict:
         phase = self.phase
         status = self.doc["state"]["status"]
-        if status == "completed":
-            return {"phase": phase, "actor": None, "action": "completed"}
-        if status == "failed":
-            return {"phase": phase, "actor": None, "action": "failed"}
-        if status == "aborted":
-            return {"phase": phase, "actor": None, "action": "aborted"}
-        if phase == "HITL_APPROVAL":
-            return {"phase": phase, "actor": "stella", "action": "await_hitl"}
+        if status != "active":  # a terminal status is also the action
+            return {"phase": phase, "actor": None, "action": status}
+        pause = self.pending_pause()
+        if pause:
+            return {
+                "phase": phase,
+                "actor": "stella",
+                "action": "await_hitl",
+                "kind": pause["kind"],
+                "decisions": self.pause_decisions(pause["kind"]),
+            }
         return {"phase": phase, "actor": self.actor_for(phase), "action": "invoke_satellite"}
 
     # -- persistence -----------------------------------------------------
@@ -353,7 +393,7 @@ class Mission:
         seqs = [e["seq"] for e in self.events]
         if seqs != list(range(1, len(seqs) + 1)):
             errors.append("events seq is not consecutive from 1")
-        terminal = [e for e in self.events if e["type"] in ("mission_completed", "mission_failed", "mission_aborted")]
+        terminal = [e for e in self.events if e["type"] in TERMINAL_EVENTS]
         if len(terminal) > 1:
             errors.append("more than one terminal event")
         return errors
@@ -381,7 +421,7 @@ def check_schema_version(doc) -> None:
     if doc["schema_version"] != SCHEMA_VERSION:
         raise EngineError(
             f"mission was written with schema {doc['schema_version']}; this script reads {SCHEMA_VERSION}; "
-            "missions from earlier versions are not read (start a new mission)"
+            "missions written with a different schema version are not read (start a new mission)"
         )
 
 
@@ -589,6 +629,7 @@ def flag_resolution_errors(tag: str, value, flag_ids: set[str]) -> list[str]:
 def validate_drafts(m: Mission, text: str) -> list[dict]:
     if m.doc["state"]["status"] != "active":
         raise EngineError(f"mission is {m.doc['state']['status']}; nothing can be appended")
+    m.require_no_pause()
     phase = m.phase
     actor = m.actor_for(phase)
     if actor is None:
@@ -617,18 +658,30 @@ def validate_drafts(m: Mission, text: str) -> list[dict]:
         for key in sorted(DRAFT_REQUIRED - set(d)):
             errors.append(f"{tag}: missing required field '{key}'")
         author, rtype = d.get("author"), d.get("type")
-        if "author" in d and author != actor:
-            errors.append(f"{tag}: author {author!r} is not the active satellite {actor!r} for {phase}")
-        if "type" in d:
-            if rtype == "refusal":  # temporary stop until the refusal pause exists
-                errors.append(f"{tag}: refusal handling is not implemented yet in this version of the script")
-            elif rtype not in (produced, "note", "flag"):
+        if "author" in d:
+            if not isinstance(author, str):
+                errors.append(f"{tag}: 'author' must be a string")
+            elif author != actor:
+                errors.append(f"{tag}: author {author!r} is not the active satellite {actor!r} for {phase}")
+        if "type" in d and not isinstance(rtype, str):
+            errors.append(f"{tag}: 'type' must be a string")
+            rtype = None
+        elif "type" in d:
+            if rtype not in (produced, "note", "flag", "refusal"):
                 errors.append(
-                    f"{tag}: type {rtype!r} is not allowed in {phase} (expected {produced!r}, 'note' or 'flag')"
+                    f"{tag}: type {rtype!r} is not allowed in {phase} "
+                    f"(expected {produced!r}, 'refusal', 'note' or 'flag')"
                 )
             elif rtype not in m.roles[actor]["writes"]:
                 errors.append(f"{tag}: {actor} may not write {rtype!r}")
             counts[rtype] = counts.get(rtype, 0) + 1
+        if rtype == "refusal":
+            if d.get("reason") not in REFUSAL_REASONS:
+                errors.append(
+                    f"{tag}: a refusal requires 'reason' capability_mismatch, missing_input or constraint_conflict"
+                )
+            if isinstance(d.get("content"), str) and not d["content"].strip():
+                errors.append(f"{tag}: a refusal requires a non-empty 'content'")
         if "content" in d and not isinstance(d["content"], str):
             errors.append(f"{tag}: content must be a string")
         refs = d.get("refs")
@@ -669,7 +722,12 @@ def validate_drafts(m: Mission, text: str) -> list[dict]:
         if rtype == "verdict" and "flag_resolutions" in d:
             errors += flag_resolution_errors(tag, d["flag_resolutions"], flag_ids)
 
-    if counts.get(produced, 0) == 0:
+    refusals = counts.get("refusal", 0)
+    if refusals > 1:
+        errors.append("only one 'refusal' record is allowed per append")
+    if refusals and counts.get(produced, 0):
+        errors.append(f"write the expected {produced} or a refusal, not both")
+    if not refusals and counts.get(produced, 0) == 0:
         errors.append(f"{phase} must produce at least one {produced!r} record")
     if produced in ("critique", "verdict") and counts.get(produced, 0) > 1:
         errors.append(f"{phase} must contain exactly one {produced!r} record")
@@ -689,8 +747,15 @@ def cmd_append(args) -> dict:
         written.append(m.add_record(d["author"], d["type"], d["content"], d["refs"], d))
     m.add_event("satellite_idle", actor, {"phase": phase})
 
-    main_rec = next(r for r in written if r["type"] == PHASE_PRODUCES[phase])
-    if phase == "CRITIQUE":
+    refusal = next((r for r in written if r["type"] == "refusal"), None)
+    main_rec = next((r for r in written if r["type"] == PHASE_PRODUCES[phase]), None)
+    if refusal:  # the phase is not completed: stop and wait for stella
+        m.add_event(
+            "hitl_requested",
+            "system",
+            {"kind": "refusal", "reason": refusal["reason"], "record_id": refusal["id"]},
+        )
+    elif phase == "CRITIQUE":
         revise = (
             main_rec["blocking"]
             and m.iteration < m.max_iterations
@@ -715,22 +780,23 @@ def cmd_append(args) -> dict:
     return {"ok": True, "records": [r["id"] for r in written], "next": m.next_info(with_context=True)}
 
 
+def read_note_file(source: str) -> str:
+    try:
+        text = Path(source).read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise EngineError(f"cannot read note from {source}: {exc}") from None
+    if text.endswith("\r\n"):  # drop only the final line break of the file
+        return text[:-2]
+    return text[:-1] if text.endswith("\n") else text
+
+
 def cmd_note(args) -> dict:
     m, records_schema, event_schema = load_mission(resolve_dir(args))
     status = m.doc["state"]["status"]
     if status != "active":
         raise EngineError(f"mission is {status}; notes can no longer be recorded")
-    if args.text is not None:
-        text = args.text
-    else:
-        try:
-            text = Path(args.text_file).read_bytes().decode("utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            raise EngineError(f"cannot read note from {args.text_file}: {exc}") from None
-        if text.endswith("\r\n"):  # drop only the final line break of the file
-            text = text[:-2]
-        elif text.endswith("\n"):
-            text = text[:-1]
+    m.require_no_pause()
+    text = args.text if args.text is not None else read_note_file(args.text_file)
     if not text.strip():
         raise EngineError("note text must not be empty")
     refs = list(args.refs or [])
@@ -745,7 +811,10 @@ def cmd_note(args) -> dict:
 
 def cmd_approve(args) -> dict:
     m, records_schema, event_schema = load_mission(resolve_dir(args))
-    if m.doc["state"]["status"] != "active" or m.phase != "HITL_APPROVAL":
+    pause = m.pending_pause() if m.doc["state"]["status"] == "active" else None
+    if pause and pause["kind"] != "approval":
+        m.require_no_pause()
+    if not pause:
         raise EngineError(f"approve is only valid in HITL_APPROVAL (current phase: {m.phase})")
     m.add_event("hitl_resolved", "stella", {"decision": "approved"})
     verdict = m.last_record("verdict")
@@ -756,11 +825,47 @@ def cmd_approve(args) -> dict:
     return {"ok": True, "next": m.next_info(with_context=True)}
 
 
+def cmd_decide(args) -> dict:
+    m, records_schema, event_schema = load_mission(resolve_dir(args))
+    status = m.doc["state"]["status"]
+    if status != "active":
+        raise EngineError(f"mission is already {status}")
+    pause = m.pending_pause()
+    if not pause or pause["kind"] != "refusal":
+        raise EngineError("decide is only valid while a refusal pause is pending")
+
+    if args.decision == "reactivate":
+        satellite = m.actor_for(m.phase)
+        if args.reason is not None:
+            raise EngineError("--reason is only valid with --decision incomplete")
+        if m.reactivation_used():
+            raise EngineError(
+                f"{satellite} was already reactivated in this entry into {m.phase}; "
+                "only incomplete or abort are valid"
+            )
+        note = read_note_file(args.note_file) if args.note_file is not None else args.note
+        if note is None or not note.strip():
+            raise EngineError("reactivate requires a non-empty note (--note or --note-file)")
+        m.add_event("hitl_resolved", "stella", {"decision": "reactivate"})
+        m.add_record("stella", "note", note, [pause["record_id"]], {})
+        m.add_event("satellite_activated", satellite, {"phase": m.phase})
+    else:
+        if args.note is not None or args.note_file is not None:
+            raise EngineError("--note and --note-file are only valid with --decision reactivate")
+        if args.reason is None or not args.reason.strip():
+            raise EngineError("incomplete requires a non-empty --reason")
+        m.add_event("hitl_resolved", "stella", {"decision": "incomplete"})
+        m.terminate("INCOMPLETE", "mission_incomplete", args.reason)
+
+    commit(m, records_schema, event_schema)
+    return {"ok": True, "next": m.next_info(with_context=True)}
+
+
 def cmd_abort(args) -> dict:
     m, records_schema, event_schema = load_mission(resolve_dir(args))
     if m.doc["state"]["status"] != "active":
         raise EngineError(f"mission is already {m.doc['state']['status']}")
-    if m.phase == "HITL_APPROVAL":
+    if m.pending_pause():
         m.add_event("hitl_resolved", "stella", {"decision": "aborted"})
     m.terminate("ABORTED", "mission_aborted", args.reason)
     commit(m, records_schema, event_schema)
@@ -771,6 +876,7 @@ def cmd_fail(args) -> dict:
     m, records_schema, event_schema = load_mission(resolve_dir(args))
     if m.doc["state"]["status"] != "active":
         raise EngineError(f"mission is already {m.doc['state']['status']}")
+    m.require_no_pause()  # a pause is closed only by stella's recorded decision
     m.terminate("FAILED", "mission_failed", args.reason)
     commit(m, records_schema, event_schema)
     return {"ok": True, "next": m.next_info()}
@@ -814,8 +920,10 @@ def cmd_report(args) -> dict:
     directory = resolve_dir(args)
     m, _, _ = load_mission(directory)
     status = m.doc["state"]["status"]
-    if status == "active":
-        raise EngineError("report is only valid on a finished mission (status: active)")
+    pause = m.pending_pause()
+    paused = status == "active" and pause is not None and pause["kind"] == "refusal"
+    if status == "active" and not paused:
+        raise EngineError("report is only valid on a finished mission or a refusal pause (status: active)")
     records = m.doc["records"]
     verdict = m.last_record("verdict")
     chosen: list[dict] = []
@@ -829,11 +937,13 @@ def cmd_report(args) -> dict:
                     break
     if verdict:
         chosen.append(verdict)
+    if paused or status == "incomplete":
+        chosen += [r for r in records if r["type"] == "refusal"]
     ops_log = m.last_record("ops_log")
 
     parts = [
         f"# Mission {m.doc['mission']['id']}\n\n"
-        f"- Status: {status}\n- Iteration: {m.iteration}\n"
+        f"- Status: {status}{' (paused: refusal)' if paused else ''}\n- Iteration: {m.iteration}\n"
     ]
     for r in chosen:
         parts.append(f"## {r['id']} — {r['author']} ({r['type']})\n\n{r['content']}\n")
@@ -843,7 +953,7 @@ def cmd_report(args) -> dict:
         reasons = [
             e["payload"].get("reason")
             for e in m.events
-            if e["type"] in ("mission_failed", "mission_aborted")
+            if e["type"] in ("mission_incomplete", "mission_failed", "mission_aborted")
         ]
         if reasons and reasons[-1]:
             parts.append(f"## Recorded reason\n\n{reasons[-1]}\n")
@@ -972,6 +1082,8 @@ def select_context(m: Mission, satellite: str, full: bool, include: list[str]) -
 
 def cmd_context(args) -> dict:
     m, _, _ = load_mission(resolve_dir(args))
+    if m.doc["state"]["status"] == "active":
+        m.require_no_pause()
     satellite = m.actor_for(m.phase)
     if m.doc["state"]["status"] != "active" or satellite is None:
         raise EngineError(
@@ -1096,6 +1208,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--note")
     p.set_defaults(func=cmd_approve)
 
+    p = sub.add_parser("decide", parents=[common], help="Stella decides at a refusal pause")
+    p.add_argument("--decision", required=True, choices=["reactivate", "incomplete"])
+    src = p.add_mutually_exclusive_group()
+    src.add_argument("--note", help="reactivate: what was missing or how to proceed, recorded as given")
+    src.add_argument("--note-file", metavar="FILE", help="reactivate: file holding the note text")
+    p.add_argument("--reason", help="incomplete: why the mission ends here")
+    p.set_defaults(func=cmd_decide)
+
     p = sub.add_parser("abort", parents=[common], help="Stella aborts the mission")
     p.add_argument("--reason", required=True)
     p.set_defaults(func=cmd_abort)
@@ -1125,7 +1245,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("sources", parents=[common], help="print the provenance and sources of every finding as Markdown (read-only)")
     p.set_defaults(func=cmd_sources)
 
-    p = sub.add_parser("report", parents=[common], help="write deliverable.md for a finished mission")
+    p = sub.add_parser("report", parents=[common], help="write deliverable.md for a finished mission or a refusal pause")
     p.set_defaults(func=cmd_report)
     return ap
 
