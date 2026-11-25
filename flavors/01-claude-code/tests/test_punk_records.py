@@ -1125,16 +1125,15 @@ class NoteTests(Base):
         self.run_cli("fail", "--reason", "x")
         self.assertNotEqual(self.note("--text", "Late.")[0], 0)
 
-    def test_rejected_while_paused_at_approval(self):
+    def test_valid_at_await_hitl_without_context(self):
         self.init("light", "--hitl-after-verdict")
         self.append(draft("punk-03-edison", "proposal"))
         self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
-        before = self.snapshot()
         code, out = self.note("--text", "One more thing.")
-        self.assertNotEqual(code, 0)
-        self.assertEqual(out["errors"], ["mission paused: waiting for stella's decision (kind: approval)"])
-        self.assertEqual(self.snapshot(), before)
-        self.assertEqual(self.run_cli("status")[1]["next"], APPROVAL_PAUSE)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["next"], APPROVAL_PAUSE)
+        self.assert_valid()
+        self.assertEqual(self.run_cli("approve")[1]["next"]["action"], "completed")  # the pause held until here
         self.assert_valid()
 
     def test_next_context_includes_the_note(self):
@@ -1697,7 +1696,7 @@ class RefusalPauseTests(RefusalBase):
 
 class RefusalFlowTests(RefusalBase):
     def test_decide_needs_a_refusal_pause(self):
-        message = "decide is only valid while a refusal pause is pending"
+        message = "decide is only valid while a refusal or ops_not_ready pause is pending"
         self.init("light", "--hitl-after-verdict")
         self.assert_cli_rejects(("decide", "--decision", "incomplete", "--reason", "x"), message)
         self.append(draft("punk-03-edison", "proposal"))
@@ -1802,6 +1801,231 @@ class RefusalFlowTests(RefusalBase):
             ("hitl_resolved", "stella", "incomplete"),
             ("phase_changed", "system", "INCOMPLETE"),
             ("mission_incomplete", "system", "Stopping here."),
+        ])
+
+
+YORK_ROSTER = ("--roster", "punk-03-edison", "punk-01-shaka", "punk-06-york")
+OPS_PAUSE = {"phase": "OPERATIONS", "actor": "stella", "action": "await_hitl", "kind": "ops_not_ready",
+             "decisions": ["close", "incomplete", "abort"]}
+OPS_PAUSED = "mission paused: waiting for stella's decision (kind: ops_not_ready)"
+
+
+class OpsBase(RefusalBase):
+    def to_operations(self):
+        """Light mission with York, at OPERATIONS: r-002 proposal, r-003 verdict."""
+        self.init("light", *YORK_ROSTER)
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+
+    def not_ready(self, content="Missing: the second page."):
+        return self.append(draft("punk-06-york", "ops_log", content, ready_to_close=False))
+
+    def report_text(self):
+        code, out = self.run_cli("report")
+        self.assertEqual(code, 0, out)
+        return out, (self.dir / "deliverable.md").read_text(encoding="utf-8")
+
+
+class OpsNotReadyTests(OpsBase):
+    def setUp(self):
+        super().setUp()
+        self.to_operations()
+
+    def test_not_ready_pauses_in_operations_with_the_exact_events(self):
+        state, start = self.doc()["state"], len(self.events())
+        out = self.not_ready()
+        self.assertEqual(out["next"], OPS_PAUSE)
+        self.assertEqual(self.sequence(start), [
+            ("record_written", "punk-06-york", "ops_log"),
+            ("satellite_idle", "punk-06-york", "OPERATIONS"),
+            ("hitl_requested", "system", "ops_not_ready"),
+        ])
+        doc, events = self.assert_valid()
+        self.assertEqual(doc["state"], state)
+        self.assertEqual(events[-1]["payload"], {
+            "kind": "ops_not_ready",
+            "reason": "punk-06-york reports that the mission is not ready to close.",
+            "record_id": "r-004",
+        })
+        self.assertEqual(self.run_cli("status")[1]["next"], OPS_PAUSE)
+
+    def test_one_not_ready_ops_log_among_several_still_pauses(self):
+        out = self.append(draft("punk-06-york", "ops_log", "Part A is fine."),
+                          draft("punk-06-york", "ops_log", "Part B is missing.", ready_to_close=False),
+                          draft("punk-06-york", "ops_log", "Part C is fine."))
+        self.assertEqual(out["next"], OPS_PAUSE)
+        self.assertEqual(self.events()[-1]["payload"]["record_id"], "r-005")
+        self.assertIn("Part B is missing.", self.report_text()[1])
+        self.assert_valid()
+
+    def test_commands_that_write_or_advance_are_rejected(self):
+        self.not_ready()
+        ops_log = json.dumps([draft("punk-06-york", "ops_log")])
+        for args in (("append", "--draft-file", "-"), ("note", "--text", "x"), ("approve",),
+                     ("context",), ("context", "--write"), ("fail", "--reason", "x")):
+            with self.subTest(command=args):
+                self.assert_cli_rejects(args, OPS_PAUSED, stdin=ops_log)
+        self.assertEqual(self.doc()["state"]["phase"], "OPERATIONS")
+
+    def test_read_only_commands_and_report_still_work(self):
+        self.not_ready()
+        records, events = self.doc(), self.events()
+        code, status = self.run_cli("status")
+        self.assertEqual((code, status["next"]), (0, OPS_PAUSE))
+        self.assertEqual(self.run_cli("show", "r-004")[1]["records"][0]["type"], "ops_log")
+        for command in ("timeline", "sources"):
+            proc = subprocess.run([sys.executable, str(SCRIPT), command, "--mission-dir", str(self.dir)],
+                                  capture_output=True, text=True, encoding="utf-8")
+            self.assertEqual(proc.returncode, 0, proc.stdout)
+        out, text = self.report_text()
+        self.assertEqual((out["status"], out["record_ids"]), ("active", ["r-003", "r-004"]))
+        self.assertIn("- Status: active (paused: ops_not_ready)", text)
+        self.assertIn("## Operations check (punk-06-york)\n\nMissing: the second page.\n", text)
+        self.assertNotIn("Recorded reason", text)
+        self.assertEqual((self.doc(), self.events()), (records, events))
+
+    def test_close_takes_no_note_and_no_reason(self):
+        self.not_ready()
+        path = Path(self._tmp.name) / "n.txt"
+        path.write_bytes(b"A note.\n")
+        for extra in (("--note", "n"), ("--note", ""), ("--note-file", str(path))):
+            self.assert_cli_rejects(("decide", "--decision", "close", *extra),
+                                    "--note and --note-file are only valid with --decision reactivate")
+        for reason in ("r", ""):
+            self.assert_cli_rejects(("decide", "--decision", "close", "--reason", reason),
+                                    "--reason is only valid with --decision incomplete")
+
+    def test_close_completes_the_mission(self):
+        self.not_ready()
+        start = len(self.events())
+        code, out = self.decide("close")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["next"], {"phase": "COMPLETED", "actor": None, "action": "completed"})
+        self.assertEqual(self.sequence(start), [
+            ("hitl_resolved", "stella", "close"),
+            ("phase_changed", "system", "COMPLETED"),
+            ("mission_completed", "system", None),
+        ])
+        doc, _ = self.assert_valid()  # exactly one terminal event, and it is the last
+        self.assertEqual((doc["state"]["phase"], doc["state"]["status"]), ("COMPLETED", "completed"))
+        out, text = self.report_text()
+        self.assertIn("r-004", out["record_ids"])
+        self.assertIn("Missing: the second page.", text)
+        self.assertIn("- Status: completed\n", text)
+        before = self.snapshot()
+        for args in (("decide", "--decision", "close"), ("abort", "--reason", "x")):
+            self.assertNotEqual(self.run_cli(*args)[0], 0, args)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_incomplete_requires_a_reason_and_takes_no_note(self):
+        self.not_ready()
+        for extra in ((), ("--reason", " ")):
+            self.assert_cli_rejects(("decide", "--decision", "incomplete", *extra),
+                                    "incomplete requires a non-empty --reason")
+        self.assert_cli_rejects(("decide", "--decision", "incomplete", "--reason", "r", "--note", "n"),
+                                "--note and --note-file are only valid with --decision reactivate")
+
+    def test_incomplete_is_terminal_and_the_report_keeps_the_ops_log(self):
+        self.not_ready()
+        start = len(self.events())
+        out = self.incomplete("The second page will not be written.")
+        self.assertEqual(out["next"], {"phase": "INCOMPLETE", "actor": None, "action": "incomplete"})
+        self.assertEqual(self.sequence(start), [
+            ("hitl_resolved", "stella", "incomplete"),
+            ("phase_changed", "system", "INCOMPLETE"),
+            ("mission_incomplete", "system", "The second page will not be written."),
+        ])
+        doc, _ = self.assert_valid()
+        self.assertEqual((doc["state"]["phase"], doc["state"]["status"]), ("INCOMPLETE", "incomplete"))
+        out, text = self.report_text()
+        self.assertEqual((out["status"], out["record_ids"]), ("incomplete", ["r-003", "r-004"]))
+        self.assertIn("Missing: the second page.", text)
+        self.assertIn("## Recorded reason\n\nThe second page will not be written.", text)
+
+    def test_reactivate_is_not_valid_here(self):
+        self.not_ready()
+        message = ("reactivate is not valid at this pause (kind: ops_not_ready); "
+                   "valid: close, incomplete, abort")
+        for extra in ((), ("--note", "Try again.")):
+            self.assert_cli_rejects(("decide", "--decision", "reactivate", *extra), message)
+
+    def test_abort_during_the_pause_resolves_it_first(self):
+        self.not_ready()
+        start = len(self.events())
+        code, out = self.run_cli("abort", "--reason", "Stop")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.sequence(start), [
+            ("hitl_resolved", "stella", "aborted"),
+            ("phase_changed", "system", "ABORTED"),
+            ("mission_aborted", "system", "Stop"),
+        ])
+        self.assert_valid()
+
+    def test_york_refusal_is_still_a_refusal_pause(self):
+        out = self.refuse("punk-06-york")
+        self.assertEqual(out["next"], {
+            "phase": "OPERATIONS", "actor": "stella", "action": "await_hitl", "kind": "refusal",
+            "decisions": ["reactivate", "incomplete", "abort"],
+        })
+        self.assert_cli_rejects(
+            ("decide", "--decision", "close"),
+            "close is not valid at this pause (kind: refusal); valid: reactivate, incomplete, abort",
+        )
+        self.reactivate()
+        self.assertEqual(self.not_ready()["next"], OPS_PAUSE)
+        self.assert_valid()
+
+
+class OpsNotReadyFlowTests(OpsBase):
+    def test_standalone_note_is_rejected_at_refusal_and_ops_not_ready(self):
+        self.to_operations()
+        self.refuse("punk-06-york")
+        self.assert_cli_rejects(("note", "--text", "x"), PAUSED)
+        self.reactivate()
+        self.not_ready()
+        self.assert_cli_rejects(("note", "--text", "x"), OPS_PAUSED)
+
+    def test_full_mission_closed_by_stella(self):
+        self.init("full")
+        self.append(draft("punk-04-pythagoras", "finding"))
+        self.append(draft("punk-03-edison", "proposal"))
+        self.append(draft("punk-02-lilith", "critique", blocking=False))
+        self.append(draft("punk-01-shaka", "verdict", verdict="APPROVED"))
+        self.run_cli("approve")
+        self.append(draft("punk-05-atlas", "artifact", content="Artifact body."))
+        self.assertEqual(self.not_ready()["next"], OPS_PAUSE)
+        self.assertEqual(self.decide("close")[0], 0)
+        doc, _ = self.assert_valid()
+        self.assertEqual(doc["state"]["status"], "completed")
+        out, text = self.report_text()
+        self.assertEqual(out["record_ids"], ["r-007", "r-005", "r-008"])
+        self.assertIn("Artifact body.", text)
+        self.assertIn("Missing: the second page.", text)
+
+    def test_event_sequence_with_not_ready_and_close(self):
+        self.to_operations()
+        self.not_ready()
+        self.assertEqual(self.decide("close")[0], 0)
+        self.assert_valid()
+        self.assertEqual(self.sequence(), [
+            ("mission_started", "stella", "light"),
+            ("record_written", "stella", "goal"),
+            ("phase_changed", "system", "IDEATION"),
+            ("satellite_activated", "punk-03-edison", "IDEATION"),
+            ("record_written", "punk-03-edison", "proposal"),
+            ("satellite_idle", "punk-03-edison", "IDEATION"),
+            ("phase_changed", "system", "VERDICT"),
+            ("satellite_activated", "punk-01-shaka", "VERDICT"),
+            ("record_written", "punk-01-shaka", "verdict"),
+            ("satellite_idle", "punk-01-shaka", "VERDICT"),
+            ("phase_changed", "system", "OPERATIONS"),
+            ("satellite_activated", "punk-06-york", "OPERATIONS"),
+            ("record_written", "punk-06-york", "ops_log"),
+            ("satellite_idle", "punk-06-york", "OPERATIONS"),
+            ("hitl_requested", "system", "ops_not_ready"),
+            ("hitl_resolved", "stella", "close"),
+            ("phase_changed", "system", "COMPLETED"),
+            ("mission_completed", "system", None),
         ])
 
 

@@ -283,6 +283,8 @@ class Mission:
             return ["approve", "abort"]
         if kind == "refusal":
             return ([] if self.reactivation_used() else ["reactivate"]) + ["incomplete", "abort"]
+        if kind == "ops_not_ready":
+            return ["close", "incomplete", "abort"]
         return ["abort"]
 
     # -- mutation (in memory) -------------------------------------------
@@ -748,12 +750,24 @@ def cmd_append(args) -> dict:
     m.add_event("satellite_idle", actor, {"phase": phase})
 
     refusal = next((r for r in written if r["type"] == "refusal"), None)
+    # Any ops_log that says "not ready" holds the mission, whatever the others say.
+    not_ready = next((r for r in reversed(written) if r["type"] == "ops_log" and not r["ready_to_close"]), None)
     main_rec = next((r for r in written if r["type"] == PHASE_PRODUCES[phase]), None)
     if refusal:  # the phase is not completed: stop and wait for stella
         m.add_event(
             "hitl_requested",
             "system",
             {"kind": "refusal", "reason": refusal["reason"], "record_id": refusal["id"]},
+        )
+    elif not_ready:  # only stella may close a mission that is not ready
+        m.add_event(
+            "hitl_requested",
+            "system",
+            {
+                "kind": "ops_not_ready",
+                "reason": "punk-06-york reports that the mission is not ready to close.",
+                "record_id": not_ready["id"],
+            },
         )
     elif phase == "CRITIQUE":
         revise = (
@@ -795,7 +809,9 @@ def cmd_note(args) -> dict:
     status = m.doc["state"]["status"]
     if status != "active":
         raise EngineError(f"mission is {status}; notes can no longer be recorded")
-    m.require_no_pause()
+    pause = m.pending_pause()
+    if pause and pause["kind"] != "approval":  # at the other pauses the note travels with the decision
+        m.require_no_pause()
     text = args.text if args.text is not None else read_note_file(args.text_file)
     if not text.strip():
         raise EngineError("note text must not be empty")
@@ -831,13 +847,21 @@ def cmd_decide(args) -> dict:
     if status != "active":
         raise EngineError(f"mission is already {status}")
     pause = m.pending_pause()
-    if not pause or pause["kind"] != "refusal":
-        raise EngineError("decide is only valid while a refusal pause is pending")
+    if not pause or pause["kind"] == "approval":
+        raise EngineError("decide is only valid while a refusal or ops_not_ready pause is pending")
+    kind = pause["kind"]
+    if (kind, args.decision) in (("refusal", "close"), ("ops_not_ready", "reactivate")):
+        raise EngineError(
+            f"{args.decision} is not valid at this pause (kind: {kind}); "
+            f"valid: {', '.join(m.pause_decisions(kind))}"
+        )
+    if args.decision != "reactivate" and (args.note is not None or args.note_file is not None):
+        raise EngineError("--note and --note-file are only valid with --decision reactivate")
+    if args.decision != "incomplete" and args.reason is not None:
+        raise EngineError("--reason is only valid with --decision incomplete")
 
     if args.decision == "reactivate":
         satellite = m.actor_for(m.phase)
-        if args.reason is not None:
-            raise EngineError("--reason is only valid with --decision incomplete")
         if m.reactivation_used():
             raise EngineError(
                 f"{satellite} was already reactivated in this entry into {m.phase}; "
@@ -849,9 +873,10 @@ def cmd_decide(args) -> dict:
         m.add_event("hitl_resolved", "stella", {"decision": "reactivate"})
         m.add_record("stella", "note", note, [pause["record_id"]], {})
         m.add_event("satellite_activated", satellite, {"phase": m.phase})
+    elif args.decision == "close":
+        m.add_event("hitl_resolved", "stella", {"decision": "close"})
+        m.go("COMPLETED")
     else:
-        if args.note is not None or args.note_file is not None:
-            raise EngineError("--note and --note-file are only valid with --decision reactivate")
         if args.reason is None or not args.reason.strip():
             raise EngineError("incomplete requires a non-empty --reason")
         m.add_event("hitl_resolved", "stella", {"decision": "incomplete"})
@@ -921,9 +946,11 @@ def cmd_report(args) -> dict:
     m, _, _ = load_mission(directory)
     status = m.doc["state"]["status"]
     pause = m.pending_pause()
-    paused = status == "active" and pause is not None and pause["kind"] == "refusal"
+    paused = status == "active" and pause is not None and pause["kind"] in ("refusal", "ops_not_ready")
     if status == "active" and not paused:
-        raise EngineError("report is only valid on a finished mission or a refusal pause (status: active)")
+        raise EngineError(
+            "report is only valid on a finished mission or a refusal or ops_not_ready pause (status: active)"
+        )
     records = m.doc["records"]
     verdict = m.last_record("verdict")
     chosen: list[dict] = []
@@ -939,11 +966,14 @@ def cmd_report(args) -> dict:
         chosen.append(verdict)
     if paused or status == "incomplete":
         chosen += [r for r in records if r["type"] == "refusal"]
-    ops_log = m.last_record("ops_log")
+    # The latest "not ready" ops_log if there is one, so a later "ready" one never hides it.
+    not_ready = [r for r in records if r["type"] == "ops_log" and not r["ready_to_close"]]
+    ops_log = not_ready[-1] if not_ready else m.last_record("ops_log")
 
+    suffix = f" (paused: {pause['kind']})" if paused else ""
     parts = [
         f"# Mission {m.doc['mission']['id']}\n\n"
-        f"- Status: {status}{' (paused: refusal)' if paused else ''}\n- Iteration: {m.iteration}\n"
+        f"- Status: {status}{suffix}\n- Iteration: {m.iteration}\n"
     ]
     for r in chosen:
         parts.append(f"## {r['id']} — {r['author']} ({r['type']})\n\n{r['content']}\n")
@@ -1208,8 +1238,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--note")
     p.set_defaults(func=cmd_approve)
 
-    p = sub.add_parser("decide", parents=[common], help="Stella decides at a refusal pause")
-    p.add_argument("--decision", required=True, choices=["reactivate", "incomplete"])
+    p = sub.add_parser("decide", parents=[common], help="Stella decides at a refusal or ops_not_ready pause")
+    p.add_argument("--decision", required=True, choices=["reactivate", "incomplete", "close"])
     src = p.add_mutually_exclusive_group()
     src.add_argument("--note", help="reactivate: what was missing or how to proceed, recorded as given")
     src.add_argument("--note-file", metavar="FILE", help="reactivate: file holding the note text")
@@ -1245,7 +1275,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("sources", parents=[common], help="print the provenance and sources of every finding as Markdown (read-only)")
     p.set_defaults(func=cmd_sources)
 
-    p = sub.add_parser("report", parents=[common], help="write deliverable.md for a finished mission or a refusal pause")
+    p = sub.add_parser("report", parents=[common], help="write deliverable.md for a finished mission or a refusal or ops_not_ready pause")
     p.set_defaults(func=cmd_report)
     return ap
 
