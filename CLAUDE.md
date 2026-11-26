@@ -6,7 +6,7 @@
 It splits reasoning across six biased specialist satellites that share a central memory (Punk Records),
 supervised by a human orchestrator (Stella). One spec (`core/`) is implemented by several runtimes (`flavors/`).
 
-**Current phase: Phase 2 — Claude Code native flavor (`flavors/01-claude-code/`), not started.**
+**Current phase: Phase 2.5 — Core v0.3, done. Phase 3 — LangGraph flavor + Startup Validator demo, not started.**
 
 ## Hard constraints
 

@@ -84,7 +84,7 @@ Examples:
 
 A team of satellites is not always the right tool. For a short, one-pass task, a single agent is enough.
 
-In one comparison on the same task, 3 runs of a single agent (Sonnet 5.5) cost US$0.15-0.26, against US$2.31 for one run of the Claude Code team (9 to 15 times more). Other full team runs varied between US$1.41 and US$3.89, so the order of magnitude is the defensible part. All three single-agent runs recommended the same as the team and met 8/8 sections and 3/3 experiments.
+In one comparison on a single task, with 3 runs of a single agent (Sonnet 5.5) and one run of the Claude Code team, the team run cost 9 to 15 times as much as a single-agent run. The order of magnitude is the defensible part. All three single-agent runs recommended the same as the team and met 8/8 sections and 3/3 experiments.
 
 What the team adds is labeled claims, critique, approval, verification and an auditable record (Punk Records). It is a trade-off, not superiority.
 
@@ -103,7 +103,7 @@ A flavor is an implementation of the `core/` spec on a specific runtime.
 
 | Flavor | Folder | Status |
 |--------|--------|--------|
-| Claude Code (native) | `flavors/01-claude-code` | ✅ Available (v0.2.0) |
+| Claude Code (native) | `flavors/01-claude-code` | ✅ Available (v0.3.0) |
 | LangGraph | `flavors/02-langgraph` | 🚧 Planned |
 | CrewAI | `flavors/03-crewai` | 🚧 Planned |
 | Anthropic SDK | `flavors/04-anthropic-sdk` | 🚧 Planned |
@@ -144,7 +144,7 @@ vegapunk-agents/
 - [x] Phase 0 — Repo init
 - [x] Phase 1 — Core spec & prompts
 - [x] Phase 2 — Claude Code native flavor
-- [ ] Phase 2.5 — Core v0.3 (planned): refusal records, an `incomplete` state and finding provenance. See Post 2, "What's next".
+- [x] Phase 2.5 — Core v0.3: `refusal` records that pause the mission, finding provenance, flags that gate the verdict, research rounds, York's `ready_to_close` and an `incomplete` state.
 - [ ] Phase 3 — LangGraph flavor + Startup Validator demo
 - [ ] Phase 4 — Egghead Monitor visualizer
 - [ ] Phase 5 — CrewAI & Anthropic SDK flavors
@@ -157,7 +157,7 @@ vegapunk-agents/
 
 ## Contributing
 
-Contributions are welcome once the core spec lands (Phase 1). Until then, feel free to open issues with ideas or feedback. Contributions are accepted under the Apache License 2.0. Please read `CLAUDE.md` for the project's ground rules, especially the decoupling rule.
+Contributions are welcome: the core spec and flavor 01 exist, and the next work is Phase 3. Feel free to open issues with ideas or feedback. Contributions are accepted under the Apache License 2.0. Please read `CLAUDE.md` for the project's ground rules, especially the decoupling rule.
 
 ## License
 
@@ -178,13 +178,13 @@ See [CITATION.cff](CITATION.cff), or use GitHub's "Cite this repository" button.
   author  = {Gonzales Komiya, Christian},
   title   = {vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)},
   year    = {2026},
-  version = {0.2.0},
+  version = {0.3.0},
   doi     = {10.5281/zenodo.24384581},
   url     = {https://github.com/ckomiya/vegapunk-agents}
 }
 ```
 
-APA: Gonzales Komiya, C. (2026). *vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)* (Version 0.2.0) [Computer software]. https://doi.org/10.5281/zenodo.24384581
+APA: Gonzales Komiya, C. (2026). *vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)* (Version 0.3.0) [Computer software]. https://doi.org/10.5281/zenodo.24384581
 
 ### Inspiration note
 

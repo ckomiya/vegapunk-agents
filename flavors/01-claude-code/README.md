@@ -7,7 +7,7 @@ Copyright 2026 Christian Gonzales Komiya
 
 Implements the `core/` spec of vegapunk-agents (a **Multi-Agent Architecture Pattern (and Conceptual Framework)**) with Claude Code native features: six generated subagents (`punk-01-shaka` … `punk-06-york`), an engine skill (`/vegapunk`) run by the main session, and a deterministic Python script (`punk_records.py`) that owns Punk Records and the mission lifecycle.
 
-- **Status:** implements core 0.3.0 (refusals, research rounds, flags, `ready_to_close` and the `incomplete` state), covered by unit tests. **Validation of 0.3.0 with real runs is pending.** The real runs reported in [Usage and cost](#usage-and-cost) were made with v0.2.0.
+- **Status:** implements core 0.3.0 (refusals, research rounds, flags, `ready_to_close` and the `incomplete` state), covered by unit tests and observed in two real full-mode runs (P10 and P11 in [Measured runs](#measured-runs)). They are single runs and guarantee nothing. Not exercised in real runs, only in unit tests: flags and the flag gate, an `ops_not_ready` pause ending in `incomplete`, and `ready_to_close: true`.
 - Missions created with v0.2.0 (`schema_version` `"0.1.0"`) are not read by this version, and there is no migration: start a new mission.
 - The pattern is model-agnostic. Only this flavor and `04-anthropic-sdk` are tied to Claude.
 
@@ -121,24 +121,26 @@ Default models: `sonnet` for Edison, Pythagoras, Lilith and Shaka; `haiku` for A
 - **Subscription:** missions count toward the plan's usage limits (`/usage` shows the share per skill).
 - **API:** you pay per token. Set a workspace spend limit in the Console.
 
-Tokens are reported first; dollars are the API-equivalent cost.
+Tokens are reported. Costs in money depend on the price and model at the time and are not published; `tools/measure_mission.py` computes them locally.
 
 ### Measured runs
 
-These runs were made with v0.2.0; none has been repeated with core 0.3.0.
+P1 to P9 were made with v0.2.0; P10 and P11 with v0.3.0.
 
-Run on 2026-11-20 with Sonnet 5.5 for engine and satellites, the same goal in all three runs, and human approval after the verdict. Cost uses API list prices with the exact 5m/1h cache split from the logs.
+Run on 2026-11-20 with Sonnet 5.5 for engine and satellites, the same goal in all three of the first runs (P1–P3), and human approval after the verdict. The engine's share of the cost uses API list prices with the exact 5m/1h cache split from the logs.
 
-| Run | Mode | Satellite calls | Engine calls | Tokens | API cost | Engine share (tokens / cost) |
-|---|---|---|---|---|---|---|
-| P1 | light | 2 | 16 | 995,753 | $0.376 | 98% / 86% |
-| P2 | standard (1 revision) | 7 | 34 | 3,098,194 | $1.284 | 97% / 83% |
-| P3 | light, optimized engine | 2 | 15 | 951,921 | $0.368 | 98% / 83% |
-| P5 | full (2 of 2 iterations) | 10 (1 retry) | 60 | 10,844,066 | $3.894 | n/a / 85.5% |
-| P6 | light, context by file (1 / 0 iterations) | 2 (0 retries) | 17 | 1,109,597 | $0.399 | n/a / 80.8% |
-| P7 | full (2 of 2 iterations) | 11 (1 retry) | 55 | 5,897,816 | $1.936 | n/a / 66.6% |
-| P8 | full (2 of 2 iterations) | 8 (0 retries) | 33 | 2,949,479 | $1.409 | n/a / 55.7% |
-| P9 | full (3 of 3 iterations) | 14 (2 retries) | 55 | 6,354,227 | $2.309 | n/a / 61.1% |
+| Run | Mode | Satellite calls | Engine calls | Tokens | Engine share (tokens / cost) |
+|---|---|---|---|---|---|
+| P1 | light | 2 | 16 | 995,753 | 98% / 86% |
+| P2 | standard (1 revision) | 7 | 34 | 3,098,194 | 97% / 83% |
+| P3 | light, optimized engine | 2 | 15 | 951,921 | 98% / 83% |
+| P5 | full (2 of 2 iterations) | 10 (1 retry) | 60 | 10,844,066 | n/a / 85.5% |
+| P6 | light, context by file (1 / 0 iterations) | 2 (0 retries) | 17 | 1,109,597 | n/a / 80.8% |
+| P7 | full (2 of 2 iterations) | 11 (1 retry) | 55 | 5,897,816 | n/a / 66.6% |
+| P8 | full (2 of 2 iterations) | 8 (0 retries) | 33 | 2,949,479 | n/a / 55.7% |
+| P9 | full (3 of 3 iterations) | 14 (2 retries) | 55 | 6,354,227 | n/a / 61.1% |
+| P10 | full (2 of 3 iterations) | 13 (2 retries) | 55 | 6,808,741 | n/a / 62.1% |
+| P11 | full (1 of 3 iterations) | 10 (0 retries) | 50 | 5,699,992 | n/a / 64.8% |
 
 P5 to P9 used Sonnet 5.5 for the engine and the Sonnet satellites, Haiku 5.5 for Atlas and York, and the prices in `tools/pricing.yaml`. The token share of the engine was not recorded for them.
 
@@ -149,16 +151,17 @@ P5 to P9 used Sonnet 5.5 for the engine and the Sonnet satellites, Haiku 5.5 for
 | P7 | None: the plan did not cover a deliverable | Approved without deliverables |
 | P8 | Execution not reached | Rejected by Shaka at the iteration limit (FAILED) |
 | P9 | Yes (2 files) | Approved, execution complete |
+| P10 | None | Atlas refused twice; Stella reactivated once with a note, then closed the mission as `incomplete` |
+| P11 | Yes (2 files) | Atlas refused once, then wrote them after Stella's note; York reported `ready_to_close: false` without opening the files; Stella chose `close` (`completed`) |
 
-P9 is the first full-mode run that went end to end with the deliverables planned, written and checked.
+P9 is the first full-mode run that went end to end with the deliverables planned, written and checked. P10 and P11 were run on 2026-11-26 with the same goal, in a sandbox project with a copy of `.claude/`, hooks disabled, Sonnet 5.5 for the engine and the reasoning satellites, Haiku 5.5 for Atlas and York, human approval after the verdict, `max_iterations` 3 and `research_rounds` 2.
 
-One run per configuration, and P1 to P3 used a single goal, so treat these as orders of magnitude. P1 ran with failing user-level hooks enabled; P2 and P3 ran with hooks disabled, so part of the P1 → P3 difference may come from that and not from the engine changes.
+Each configuration was measured with few runs, without enough repetition to estimate variance, and P1 to P3 used a single goal, so treat these as orders of magnitude. P1 ran with failing user-level hooks enabled; P2 and P3 ran with hooks disabled, so part of the P1 → P3 difference may come from that and not from the engine changes.
 
 - Each satellite call costs about 9–15k tokens.
 - In P1–P3 (short light-mode runs) the engine re-read about 40–60k tokens per call; this figure comes from the original README and was not re-checked against logs. In full-mode runs the context grows with the conversation: the measured average was about 165k tokens in P5 and about 100k in P9, after passing context by file (see "Where the cost goes").
-- The engine is the largest share of the cost (56% to 86% in P5-P9).
-- Defining the mission with Stella (SETUP) is a near-fixed ~$0.11–0.12.
-- Standard costs ~3.4× light and bought visibly better output: a blocking critique caught an unfinished rule.
+- The engine is the largest share of the cost (56% to 86% in P5-P11).
+- Standard (P2) used ~3.1× the tokens of light (P1) and bought visibly better output: a blocking critique caught an unfinished rule.
 
 Call this the **LLM-orchestrator tax**: the price of using Claude Code as the engine (zero engine code, natural conversation, built-in permissions and web search). Flavors whose engine is code (`02-langgraph`, `04-anthropic-sdk`) should pay mainly for the satellites.
 
@@ -166,7 +169,7 @@ Prices change. They are kept, with their date, in `tools/pricing.yaml`.
 
 ### Where the cost goes
 
-In P5 the engine accounted for 85.5% of the cost (US$3.33 of 3.894). Passing each satellite's context by file (each reads its own `contexts/<NN>-<satellite>.json`) and reading records selectively coincided with a lower engine cost, US$1.41 in P9 (55 engine calls against 60 in P5). In our full-mode runs the engine's average context was about 100k tokens in P9 against about 165k in P5, and its output about 42.5k tokens against about 122k. In P9 the engine cost splits into three similar parts: cache writes about 31%, cache reads about 39% and output about 30%. The satellites cost US$0.899 in P9 against US$0.564 in P5; the satellites ran more times in P9 (14 invocations against 10) and with one more iteration. These are a few runs; they show a direction, not a fixed cost, and full-mode cost varies between runs.
+In P5 the engine accounted for 85.5% of the cost. Passing each satellite's context by file (each reads its own `contexts/<NN>-<satellite>.json`) and reading records selectively coincided with a lower engine cost in P9 than in P5 (55 engine calls against 60). In our full-mode runs the engine's average context was about 100k tokens in P9 against about 165k in P5, and its output about 42.5k tokens against about 122k. In P9 the engine cost splits into three similar parts: cache writes about 31%, cache reads about 39% and output about 30%. The satellites cost about 1.6 times as much in P9 as in P5; they ran more times in P9 (14 invocations against 10) and with one more iteration. These are a few runs; they show a direction, not a fixed cost, and full-mode cost varies between runs.
 
 ## Deliverable coverage
 
@@ -217,13 +220,15 @@ A model that breaks the draft contract fails visibly: `punk_records.py` rejects 
 
 ## Known limitations (this release)
 
-- Core 0.3.0 has not been validated with real runs yet.
+- Core 0.3.0 has been observed in two real runs only; see [Status](#flavor-01--claude-code-native) for what they did not exercise.
 - Stella can only approve or abort at the checkpoint (no "approve with changes").
 - The engine's mode suggestion can vary between runs.
 - On some Claude Code versions subagents show as "Backgrounded agent" even though the skill asks for the foreground (the engine still waits for each one).
 - The engine rewrites each draft to save it, so its output is paid twice.
 - York checks structure and consistency with the plan, not facts on the web.
 - Atlas (Haiku) can refuse to write the deliverables if the plan defers verification checks to the founder; the mission then pauses as a `refusal`.
+- Atlas and York can read the engine's fixed instruction "answer with only the JSON array of record drafts" as "do not use tools". Atlas refused to write files on the first attempt in P9, P10 and P11; York did not open the files in P11. The instruction is the same in v0.2.0, so this is not a regression. A fix (stating that the JSON rule governs only the final answer) is planned for v0.3.1.
+- Until v0.3.1, when Atlas refuses, write Stella's note as a direct order in English, for example "Write the files now and mark every unverified figure as an estimate." A note of this kind unblocked Atlas in P9 and P11. In P10 a note in Spanish, worded as an authorization, did not; language and wording changed together, so one run cannot separate them.
 
 ## Development
 
