@@ -415,6 +415,14 @@ class InitTests(Base):
         self.assertIn(self.JSON_RULE, ctx_of(nxt)["runtime_limits"]["rules"])
         self.assertNotEqual(nxt["actor"], "punk-04-pythagoras")
 
+    def test_json_contract_covers_the_final_response_only(self):
+        new = ("Your final response is only the JSON array of record drafts; "
+               "before it, use your tools whenever your task needs them.")
+        old = "Respond with only the JSON array of record drafts."
+        rules = ctx_of(self.init("standard")["next"])["runtime_limits"]["rules"]
+        self.assertIn(new, rules)
+        self.assertNotIn(old, rules)
+
     def test_search_limit_defaults_to_3(self):
         out = self.init("light")
         engine = json.loads((self.dir / "engine.json").read_text(encoding="utf-8"))

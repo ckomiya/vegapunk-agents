@@ -1252,7 +1252,7 @@ def runtime_rules(m: Mission) -> list[str]:
     return [
         f"Keep the content of each draft under about {m.draft_words} words.",
         f"punk-04-pythagoras only: use at most {m.search_limit} web searches.",
-        "Respond with only the JSON array of record drafts.",
+        "Your final response is only the JSON array of record drafts; before it, use your tools whenever your task needs them.",
         "Output must be valid JSON: escape backslashes and double quotes inside strings.",
     ]
 

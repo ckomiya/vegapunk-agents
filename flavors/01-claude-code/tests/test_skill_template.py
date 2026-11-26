@@ -54,6 +54,14 @@ class SkillTemplateTests(unittest.TestCase):
             with self.subTest(decision=choice):
                 self.assertIn(f"decide --decision {choice}", self.engine)
 
+    def test_fixed_invocation_text_matches_the_template(self):
+        def fixed_lines(text):
+            return [line for line in text.splitlines() if line.startswith("Read the file <context_file>")]
+
+        template = fixed_lines((CLAUDE_DIR.parent / "templates" / "skill-vegapunk.md").read_text(encoding="utf-8"))
+        self.assertEqual(len(template), 1)
+        self.assertEqual(fixed_lines(self.engine), template)
+
 
 if __name__ == "__main__":
     unittest.main()
