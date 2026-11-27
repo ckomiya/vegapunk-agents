@@ -33,6 +33,6 @@ Done-criteria:
 
 ## Settings (tell these to the engine; not part of the goal)
 
-- Mode full; max_iterations 3; research rounds 2; search limit 6; draft limit 500 words.
+- Mode full; max_iterations 3; research_rounds 2; search limit 6; draft limit 500 words.
 - Approval before execution is mandatory in full mode.
 - In flavor 01: paste the goal block as written and say "search limit 6, draft limit 500"; answer 2 when the engine asks for `research_rounds`.

@@ -21,7 +21,7 @@ These prompts are canonical. Flavors may adapt the **format** (for example split
 
 ## Structured output
 
-The canonical output contract in `_shared-protocol.md` is a JSON array of record drafts. Flavors MAY enforce the record-draft contract through native structured output or tool calling instead of raw JSON text, as long as the resulting drafts are identical in shape and rules.
+The canonical output contract in `_shared-protocol.md` is a JSON array of record drafts, given as the satellite's final response. Flavors MAY enforce the record-draft contract through native structured output or tool calling instead of raw JSON text, as long as the resulting drafts are identical in shape and rules.
 
 ## Files
 

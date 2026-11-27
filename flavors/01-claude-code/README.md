@@ -134,6 +134,7 @@ Run on 2026-11-20 with Sonnet 5.5 for engine and satellites, the same goal in al
 | P1 | light | 2 | 16 | 995,753 | 98% / 86% |
 | P2 | standard (1 revision) | 7 | 34 | 3,098,194 | 97% / 83% |
 | P3 | light, optimized engine | 2 | 15 | 951,921 | 98% / 83% |
+| P4 | standard, optimized (1 of 2 iterations) | 8 (2 retries) | 35 | 3,351,104 | 96.8% / — |
 | P5 | full (2 of 2 iterations) | 10 (1 retry) | 60 | 10,844,066 | n/a / 85.5% |
 | P6 | light, context by file (1 / 0 iterations) | 2 (0 retries) | 17 | 1,109,597 | n/a / 80.8% |
 | P7 | full (2 of 2 iterations) | 11 (1 retry) | 55 | 5,897,816 | n/a / 66.6% |
@@ -154,7 +155,7 @@ P5 to P9 used Sonnet 5.5 for the engine and the Sonnet satellites, Haiku 5.5 for
 | P10 | None | Atlas refused twice; Stella reactivated once with a note, then closed the mission as `incomplete` |
 | P11 | Yes (2 files) | Atlas refused once, then wrote them after Stella's note; York reported `ready_to_close: false` without opening the files; Stella chose `close` (`completed`) |
 
-P9 is the first full-mode run that went end to end with the deliverables planned, written and checked. P10 and P11 were run on 2026-11-26 with the same goal, in a sandbox project with a copy of `.claude/`, hooks disabled, Sonnet 5.5 for the engine and the reasoning satellites, Haiku 5.5 for Atlas and York, human approval after the verdict, `max_iterations` 3 and `research_rounds` 2.
+P9 is the first full-mode run that went end to end with the deliverables planned, written and checked. P10 and P11 were run on 2026-11-26 with the same goal as P5 and P7–P9 (the Startup Validator sample mission), in a sandbox project with a copy of `.claude/`, hooks disabled, Sonnet 5.5 for the engine and the reasoning satellites, Haiku 5.5 for Atlas and York, human approval after the verdict, `max_iterations` 3 and `research_rounds` 2.
 
 Each configuration was measured with few runs, without enough repetition to estimate variance, and P1 to P3 used a single goal, so treat these as orders of magnitude. P1 ran with failing user-level hooks enabled; P2 and P3 ran with hooks disabled, so part of the P1 → P3 difference may come from that and not from the engine changes.
 
@@ -170,6 +171,21 @@ Prices change. They are kept, with their date, in `tools/pricing.yaml`.
 ### Where the cost goes
 
 In P5 the engine accounted for 85.5% of the cost. Passing each satellite's context by file (each reads its own `contexts/<NN>-<satellite>.json`) and reading records selectively coincided with a lower engine cost in P9 than in P5 (55 engine calls against 60). In our full-mode runs the engine's average context was about 100k tokens in P9 against about 165k in P5, and its output about 42.5k tokens against about 122k. In P9 the engine cost splits into three similar parts: cache writes about 31%, cache reads about 39% and output about 30%. The satellites cost about 1.6 times as much in P9 as in P5; they ran more times in P9 (14 invocations against 10) and with one more iteration. These are a few runs; they show a direction, not a fixed cost, and full-mode cost varies between runs.
+
+### v0.3.1: the JSON-only misreading (isolated test)
+
+Before v0.3.1, Atlas and York could read the engine's "only the JSON array" instruction as a ban on using their tools. In the test, Atlas and York were invoked alone as subagents on frozen contexts from run P11, before and after the change, with success criteria and thresholds fixed before running. Atlas succeeded if both deliverable files were written and a valid `artifact` was delivered; York succeeded if both deliverables were opened and a valid `ops_log` was delivered. The quality of the files was not judged. The test harness lives outside the repository.
+
+| Check (fixed in advance) | Before | After | Fisher, one-sided | Verdict |
+|---|---|---|---|---|
+| York, 5 attempts | 0/5 | 4/5 | p ≈ 0.024 | passes |
+| Atlas, first 5 attempts | 2/5 | 2/5 | p ≈ 0.74 | does not pass |
+| Atlas, 15 attempts | 9/15 | 12/15 | p ≈ 0.21 | not demonstrated |
+
+- Looked at after the results (not a pre-set criterion): Atlas wrote both files in 15/15 attempts after the change (9/15 before), York opened both deliverables in 5/5 (0/5 before), and no attempt after the change refused or cited the JSON rule. The remaining failures were delivery-format errors (prose before the JSON or a code fence).
+- In 8 interactive attempts after the change, all 8 succeeded with a clean JSON array. In the 4 that used the engine's usual setup (Sonnet main session, auto permission mode), Atlas and York used their tools and returned the JSON array through Claude Code's subagent handback; in the other 4 (Haiku main session, bypass permissions) the handback was not offered and the array came as plain text. Small sample.
+- Before the change, a note from Stella in English or in Spanish gave the same rate as no note in the first five attempts (2/5 each); with 5 attempts per condition this does not show that the note has no effect.
+- Mean tokens per attempt (main session + subagent): Atlas 159,299 → 193,303; York 115,404 → 186,676 (after the change they act).
 
 ## Deliverable coverage
 
@@ -227,8 +243,8 @@ A model that breaks the draft contract fails visibly: `punk_records.py` rejects 
 - The engine rewrites each draft to save it, so its output is paid twice.
 - York checks structure and consistency with the plan, not facts on the web.
 - Atlas (Haiku) can refuse to write the deliverables if the plan defers verification checks to the founder; the mission then pauses as a `refusal`.
-- Atlas and York can read the engine's fixed instruction "answer with only the JSON array of record drafts" as "do not use tools". Atlas refused to write files on the first attempt in P9, P10 and P11; York did not open the files in P11. The instruction is the same in v0.2.0, so this is not a regression. A fix (stating that the JSON rule governs only the final answer) is planned for v0.3.1.
-- Until v0.3.1, when Atlas refuses, write Stella's note as a direct order in English, for example "Write the files now and mark every unverified figure as an estimate." A note of this kind unblocked Atlas in P9 and P11. In P10 a note in Spanish, worded as an authorization, did not; language and wording changed together, so one run cannot separate them.
+- v0.3.1 states that the JSON contract covers only the final response and that satellites use their tools before it (shared protocol, the engine's fixed invocation text and the runtime rules). See [the isolated test](#v031-the-json-only-misreading-isolated-test).
+- A satellite can still wrap its final JSON in prose or a code fence; the script rejects it and the engine retries once. Seen in 4 of 20 isolated `claude -p` attempts after the fix, and in 0 of 8 interactive ones.
 
 ## Development
 
