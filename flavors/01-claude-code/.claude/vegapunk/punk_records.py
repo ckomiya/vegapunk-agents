@@ -97,8 +97,8 @@ REFUSAL_REASONS = ("capability_mismatch", "missing_input", "constraint_conflict"
 
 class EngineError(Exception):
     def __init__(self, errors):
-        super().__init__("; ".join(errors))
         self.errors = [errors] if isinstance(errors, str) else list(errors)
+        super().__init__("; ".join(self.errors))
 
 
 # --------------------------------------------------------------------------

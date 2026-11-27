@@ -2578,5 +2578,31 @@ class FullMissionWithRoundsAndFlagsTests(RefusalBase):
         self.assertEqual(rounds, [1, 2])
 
 
+class EngineErrorTests(Base):
+    def engine_error(self, errors):
+        sys.path.insert(0, str(VEGAPUNK_DIR))
+        try:
+            import punk_records
+        finally:
+            sys.path.remove(str(VEGAPUNK_DIR))
+        return punk_records.EngineError(errors)
+
+    def test_string_is_one_error(self):
+        exc = self.engine_error("abc")
+        self.assertEqual(str(exc), "abc")
+        self.assertEqual(exc.errors, ["abc"])
+
+    def test_list_is_joined(self):
+        exc = self.engine_error(["a", "b"])
+        self.assertEqual(str(exc), "a; b")
+        self.assertEqual(exc.errors, ["a", "b"])
+
+    def test_cli_output_of_a_string_error_is_readable(self):
+        self.init("light")
+        code, out = self.run_cli("approve")
+        self.assertNotEqual(code, 0, out)
+        self.assertEqual(out["errors"], ["approve is only valid in HITL_APPROVAL (current phase: IDEATION)"])
+
+
 if __name__ == "__main__":
     unittest.main()
