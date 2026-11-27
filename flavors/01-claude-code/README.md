@@ -7,7 +7,7 @@ Copyright 2026 Christian Gonzales Komiya
 
 Implements the `core/` spec of vegapunk-agents (a **Multi-Agent Architecture Pattern (and Conceptual Framework)**) with Claude Code native features: six generated subagents (`punk-01-shaka` … `punk-06-york`), an engine skill (`/vegapunk`) run by the main session, and a deterministic Python script (`punk_records.py`) that owns Punk Records and the mission lifecycle.
 
-- **Status:** implements core 0.3.0 (refusals, research rounds, flags, `ready_to_close` and the `incomplete` state), covered by unit tests and observed in two real full-mode runs (P10 and P11 in [Measured runs](#measured-runs)). They are single runs and guarantee nothing. Not exercised in real runs, only in unit tests: flags and the flag gate, an `ops_not_ready` pause ending in `incomplete`, and `ready_to_close: true`.
+- **Status:** implements core 0.3.1 (refusals, research rounds, flags, `ready_to_close` and the `incomplete` state), covered by unit tests and observed in two real full-mode runs (P10 and P11 in [Measured runs](#measured-runs)). They are single runs and guarantee nothing. Not exercised in real runs, only in unit tests: flags and the flag gate, an `ops_not_ready` pause ending in `incomplete`, and `ready_to_close: true`.
 - Missions created with v0.2.0 (`schema_version` `"0.1.0"`) are not read by this version, and there is no migration: start a new mission.
 - The pattern is model-agnostic. Only this flavor and `04-anthropic-sdk` are tied to Claude.
 

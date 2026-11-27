@@ -103,10 +103,12 @@ A flavor is an implementation of the `core/` spec on a specific runtime.
 
 | Flavor | Folder | Status |
 |--------|--------|--------|
-| Claude Code (native) | `flavors/01-claude-code` | ✅ Available (v0.3.0) |
+| Claude Code (native) | `flavors/01-claude-code` | ✅ Available (v0.3.1) |
 | LangGraph | `flavors/02-langgraph` | 🚧 Planned |
 | CrewAI | `flavors/03-crewai` | 🚧 Planned |
 | Anthropic SDK | `flavors/04-anthropic-sdk` | 🚧 Planned |
+
+v0.3.1: the JSON output contract now covers only the satellite's final response; satellites use their tools before it.
 
 ## Repo structure
 
@@ -178,13 +180,13 @@ See [CITATION.cff](CITATION.cff), or use GitHub's "Cite this repository" button.
   author  = {Gonzales Komiya, Christian},
   title   = {vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)},
   year    = {2026},
-  version = {0.3.0},
+  version = {0.3.1},
   doi     = {10.5281/zenodo.24384581},
   url     = {https://github.com/ckomiya/vegapunk-agents}
 }
 ```
 
-APA: Gonzales Komiya, C. (2026). *vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)* (Version 0.3.0) [Computer software]. https://doi.org/10.5281/zenodo.24384581
+APA: Gonzales Komiya, C. (2026). *vegapunk-agents: A Multi-Agent Architecture Pattern (and Conceptual Framework)* (Version 0.3.1) [Computer software]. https://doi.org/10.5281/zenodo.24384581
 
 ### Inspiration note
 

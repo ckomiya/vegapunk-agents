@@ -5,7 +5,7 @@
 
 This document is the canonical protocol of `vegapunk-agents`. Flavors implement it; they never redefine it. Normative keywords (MUST, SHOULD, MAY) are used in the RFC 2119 sense. Data formats are defined in [`schemas/`](schemas/) and explained in [`punk-records.md`](punk-records.md).
 
-Specification version: 0.3.0
+Specification version: 0.3.1
 
 ## Definition
 
