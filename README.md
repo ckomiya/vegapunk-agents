@@ -154,6 +154,7 @@ vegapunk-agents/
 ## Posts
 
 - Post 1 (EN): [Why my AI agents don't talk to each other: the Vegapunk pattern](https://dev.to/ckomiya/why-my-ai-agents-dont-talk-to-each-other-the-vegapunk-pattern-4i49)
+- Post 1 (ES): [Por qué mis agentes de IA no hablan entre sí: el patrón Vegapunk](https://dev.to/ckomiya/spanish-por-que-mis-agentes-de-ia-no-hablan-entre-si-el-patron-vegapunk-3j78)
 - Post 2 (EN): [Six agents, one blackboard: what I saw in their blocks, refusals and verdicts](https://dev.to/ckomiya/six-agents-one-blackboard-what-i-saw-in-their-blocks-refusals-and-verdicts-24ck)
 - Post 2 (ES): [Seis agentes, una pizarra: lo que vi en sus bloqueos, negativas y veredictos](https://dev.to/ckomiya/seis-agentes-una-pizarra-lo-que-vi-en-sus-bloqueos-negativas-y-veredictos-28e4)
 
