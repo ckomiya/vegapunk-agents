@@ -7,7 +7,7 @@ Copyright 2026 Christian Gonzales Komiya
 
 Implements the `core/` spec of vegapunk-agents (a **Multi-Agent Architecture Pattern (and Conceptual Framework)**) with Claude Code native features: six generated subagents (`punk-01-shaka` … `punk-06-york`), an engine skill (`/vegapunk`) run by the main session, and a deterministic Python script (`punk_records.py`) that owns Punk Records and the mission lifecycle.
 
-- **Status:** implements core 0.3.1 (refusals, research rounds, flags, `ready_to_close` and the `incomplete` state), covered by unit tests and observed in two real full-mode runs (P10 and P11 in [Measured runs](#measured-runs)). They are single runs and guarantee nothing. Not exercised in real runs, only in unit tests: flags and the flag gate, an `ops_not_ready` pause ending in `incomplete`, and `ready_to_close: true`.
+- **Status:** implements core 0.3.1 (refusals, research rounds, flags, `ready_to_close` and the `incomplete` state), covered by unit tests and observed in three real full-mode runs (P10 and P11 with v0.3.0 and P12 with v0.3.1, in [Measured runs](#measured-runs)). They are single runs and guarantee nothing. Not exercised in real runs, only in unit tests: flags and the flag gate, and an `ops_not_ready` pause ending in `incomplete`.
 - Missions created with v0.2.0 (`schema_version` `"0.1.0"`) are not read by this version, and there is no migration: start a new mission.
 - The pattern is model-agnostic. Only this flavor and `04-anthropic-sdk` are tied to Claude.
 
@@ -125,7 +125,7 @@ Tokens are reported. Costs in money depend on the price and model at the time an
 
 ### Measured runs
 
-P1 to P9 were made with v0.2.0; P10 and P11 with v0.3.0.
+P1 to P9 were made with v0.2.0; P10 and P11 with v0.3.0; P12 with v0.3.1.
 
 Run on 2026-11-20 with Sonnet 5.5 for engine and satellites, the same goal in all three of the first runs (P1–P3), and human approval after the verdict. The engine's share of the cost uses API list prices with the exact 5m/1h cache split from the logs.
 
@@ -142,6 +142,7 @@ Run on 2026-11-20 with Sonnet 5.5 for engine and satellites, the same goal in al
 | P9 | full (3 of 3 iterations) | 14 (2 retries) | 55 | 6,354,227 | n/a / 61.1% |
 | P10 | full (2 of 3 iterations) | 13 (2 retries) | 55 | 6,808,741 | n/a / 62.1% |
 | P11 | full (1 of 3 iterations) | 10 (0 retries) | 50 | 5,699,992 | n/a / 64.8% |
+| P12 | full (2 of 3 iterations) | 12 (1 retry) | 47 | 6,313,756 | 82.3% / 56.8% |
 
 P5 to P9 used Sonnet 5.5 for the engine and the Sonnet satellites, Haiku 5.5 for Atlas and York, and the prices in `tools/pricing.yaml`. The token share of the engine was not recorded for them.
 
@@ -154,14 +155,17 @@ P5 to P9 used Sonnet 5.5 for the engine and the Sonnet satellites, Haiku 5.5 for
 | P9 | Yes (2 files) | Approved, execution complete |
 | P10 | None | Atlas refused twice; Stella reactivated once with a note, then closed the mission as `incomplete` |
 | P11 | Yes (2 files) | Atlas refused once, then wrote them after Stella's note; York reported `ready_to_close: false` without opening the files; Stella chose `close` (`completed`) |
+| P12 | Yes (2 files) | First full-mode run to complete with both deliverables and no note from Stella: Atlas wrote both files on its first invocation, York opened both deliverables and reported `ready_to_close: true`; Stella's only action was the approval after the verdict. |
 
-P9 is the first full-mode run that went end to end with the deliverables planned, written and checked. P10 and P11 were run on 2026-11-26 with the same goal as P5 and P7–P9 (the Startup Validator sample mission), in a sandbox project with a copy of `.claude/`, hooks disabled, Sonnet 5.5 for the engine and the reasoning satellites, Haiku 5.5 for Atlas and York, human approval after the verdict, `max_iterations` 3 and `research_rounds` 2.
+P9 is the first full-mode run that went end to end with the deliverables planned, written and checked. P10 and P11 were run on 2026-11-26 with the same goal as P5 and P7–P9 (the Startup Validator sample mission), in a sandbox project with a copy of `.claude/`, hooks disabled, Sonnet 5.5 for the engine and the reasoning satellites, Haiku 5.5 for Atlas and York, human approval after the verdict, `max_iterations` 3 and `research_rounds` 2. P12 was run on 2026-11-27 with v0.3.1, with the same goal as P5 and P7–P11 (the Startup Validator sample mission) and the same setup as P10 and P11 (sandbox copy of `.claude/`, hooks disabled, Sonnet 5.5 for the engine and the reasoning satellites, Haiku 5.5 for Atlas and York, `max_iterations` 3, `research_rounds` 2), with the engine started with `--permission-mode auto`. It used 2 of 3 iterations.
+
+**P12 against its pre-set criterion.** Criteria were fixed before the run. Points 1–4 passed (mission completed; Atlas wrote both files on its first invocation without a note; York opened both deliverables and returned a valid `ops_log`; Stella only approved). Point 5, 'no satellite uses up its retry', was worded ambiguously: Pythagoras had one draft rejected for an unknown field and its single retry was accepted, without reaching Stella. Read strictly, point 5 does not pass. Notable findings: York's check was shallow (it missed that one 'Apply at execution' item was only partly applied and described stop rules that are not in the plan); Pythagoras ran 7 web searches in its second research round against the mission's limit of 6 per round, which nothing enforces; the deliverables cite record ids rather than URLs, so a reader of the files cannot open the sources.
 
 Each configuration was measured with few runs, without enough repetition to estimate variance, and P1 to P3 used a single goal, so treat these as orders of magnitude. P1 ran with failing user-level hooks enabled; P2 and P3 ran with hooks disabled, so part of the P1 → P3 difference may come from that and not from the engine changes.
 
 - Each satellite call costs about 9–15k tokens.
 - In P1–P3 (short light-mode runs) the engine re-read about 40–60k tokens per call; this figure comes from the original README and was not re-checked against logs. In full-mode runs the context grows with the conversation: the measured average was about 165k tokens in P5 and about 100k in P9, after passing context by file (see "Where the cost goes").
-- The engine is the largest share of the cost (56% to 86% in P5-P11).
+- The engine is the largest share of the cost (56% to 86% in P5-P12).
 - Standard (P2) used ~3.1× the tokens of light (P1) and bought visibly better output: a blocking critique caught an unfinished rule.
 
 Call this the **LLM-orchestrator tax**: the price of using Claude Code as the engine (zero engine code, natural conversation, built-in permissions and web search). Flavors whose engine is code (`02-langgraph`, `04-anthropic-sdk`) should pay mainly for the satellites.
@@ -236,12 +240,13 @@ A model that breaks the draft contract fails visibly: `punk_records.py` rejects 
 
 ## Known limitations (this release)
 
-- Core 0.3.0 has been observed in two real runs only; see [Status](#flavor-01--claude-code-native) for what they did not exercise.
+- Core 0.3.0 has been observed in two real runs only and 0.3.1 in one full run (P12); see [Status](#flavor-01--claude-code-native) for what real runs have not exercised.
 - Stella can only approve or abort at the checkpoint (no "approve with changes").
 - The engine's mode suggestion can vary between runs.
 - On some Claude Code versions subagents show as "Backgrounded agent" even though the skill asks for the foreground (the engine still waits for each one).
 - The engine rewrites each draft to save it, so its output is paid twice.
-- York checks structure and consistency with the plan, not facts on the web.
+- York's deliverable check covers structure and the approved plan, but not every 'Apply at execution' item, and it can miss small inconsistencies (P9, P12). It does not check facts on the web.
+- Runtime limits such as the web-search limit are stated in the prompt and in the runtime rules but not enforced; in P12 Pythagoras exceeded the mission's per-round limit by one search.
 - Atlas (Haiku) can refuse to write the deliverables if the plan defers verification checks to the founder; the mission then pauses as a `refusal`.
 - v0.3.1 states that the JSON contract covers only the final response and that satellites use their tools before it (shared protocol, the engine's fixed invocation text and the runtime rules). See [the isolated test](#v031-the-json-only-misreading-isolated-test).
 - A satellite can still wrap its final JSON in prose or a code fence; the script rejects it and the engine retries once. Seen in 4 of 20 isolated `claude -p` attempts after the fix, and in 0 of 8 interactive ones.

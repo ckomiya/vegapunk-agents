@@ -59,7 +59,7 @@ Mission folders (`.vegapunk/`) and `./startup-validator-output/` stay local if y
 
 ## Cost
 
-A complete run with the flavor 01 engine used 5,699,992 tokens in our last completed run (P11, v0.3.0: 1 of 3 iterations, no retries), and the engine accounted for 64.8% of its cost. An earlier one (P9, v0.2.0: 3 of 3 iterations) used 6,354,227 tokens; usage varies between runs. Costs in money depend on the price and model at the time and are not published; `tools/measure_mission.py` in flavor 01 computes them locally. The measurement method is in the [flavor 01 README](../../flavors/01-claude-code/README.md#usage-and-cost), and the runs are in its [Measured runs](../../flavors/01-claude-code/README.md#measured-runs) table.
+A complete run with the flavor 01 engine used 5,699,992 tokens in a completed run (P11, v0.3.0: 1 of 3 iterations, no retries), and the engine accounted for 64.8% of its cost. An earlier one (P9, v0.2.0: 3 of 3 iterations) used 6,354,227 tokens; usage varies between runs. Costs in money depend on the price and model at the time and are not published; `tools/measure_mission.py` in flavor 01 computes them locally. The measurement method is in the [flavor 01 README](../../flavors/01-claude-code/README.md#usage-and-cost), and the runs are in its [Measured runs](../../flavors/01-claude-code/README.md#measured-runs) table.
 
 ## Relationship to the framework
 
