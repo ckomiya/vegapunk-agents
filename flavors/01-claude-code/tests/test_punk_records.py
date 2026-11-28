@@ -2716,5 +2716,216 @@ class CommitFailureTests(Base):
         self.assertEqual(contexts.read_bytes(), b"not a folder")
 
 
+class DraftErrorMessageTests(Base):
+    """The literal error list of one invalid draft; append_error also checks that nothing is written."""
+
+    def assert_errors(self, draft_, expected):
+        with self.subTest(expected=expected):
+            self.assertEqual(self.append_error(json.dumps([draft_])), [expected])
+
+    def test_invalid_draft_fields(self):
+        self.init("light")  # active: IDEATION / edison
+        edison = "punk-03-edison"
+        without_refs = draft(edison, "proposal")
+        del without_refs["refs"]
+        self.assert_errors(draft(edison, "proposal", extra="x"), "draft[0]: unknown field 'extra'")
+        self.assert_errors(without_refs, "draft[0]: missing required field 'refs'")
+        self.assert_errors(draft(edison, "proposal", content=5), "draft[0]: content must be a string")
+        for refs in ("r-001", [1]):
+            self.assert_errors(draft(edison, "proposal", refs=refs), "draft[0]: refs must be an array of record ids")
+        self.assert_errors(draft(edison, "proposal", verdict="APPROVED"),
+                           "draft[0]: 'verdict' is only allowed on a verdict record")
+        self.append(draft(edison, "proposal"))  # now VERDICT / shaka
+        self.assert_errors(draft("punk-01-shaka", "verdict", verdict="MAYBE"),
+                           "draft[0]: a verdict requires 'verdict' APPROVED, NEEDS_REVISION or REJECTED")
+
+    def test_needs_revision_without_edison_in_the_roster(self):
+        out = self.init("light", "--roster", "punk-01-shaka")
+        self.assertEqual(out["next"]["phase"], "VERDICT")
+        self.assert_errors(draft("punk-01-shaka", "verdict", verdict="NEEDS_REVISION"),
+                           "draft[0]: NEEDS_REVISION is invalid because punk-03-edison is not in the roster")
+
+
+class IsolatedCopyTests(Base):
+    """The script loads roles.json and the schemas from its own folder, wherever that folder is."""
+
+    def setUp(self):
+        super().setUp()
+        self.copy = Path(self._tmp.name).resolve() / ".claude" / "vegapunk"
+        self.copy.mkdir(parents=True)
+        for name in ("punk_records.py", "roles.json", "punk-records.schema.json", "event.schema.json"):
+            shutil.copy(VEGAPUNK_DIR / name, self.copy / name)
+        patch = mock.patch.dict(globals(), SCRIPT=self.copy / "punk_records.py")  # run_cli runs the copy
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def assert_init_cannot_load(self):
+        code, out = self.run_cli("init", "--goal", "G", "--mode", "light", "--mission-dir", str(self.dir))
+        self.assertEqual(code, 1, out)
+        self.assertEqual(len(out["errors"]), 1, out)
+        # The rest of the message comes from the operating system or the JSON parser.
+        prefix = f"cannot load schemas/roles.json from {self.copy} (run generate_agents.py): "
+        self.assertTrue(out["errors"][0].startswith(prefix), out)
+        self.assertFalse(self.dir.exists())
+
+    def test_untouched_copy_runs_a_mission(self):
+        self.init("light")
+        self.append(draft("punk-03-edison", "proposal"))
+        code, out = self.run_cli("status")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["phase"], "VERDICT")
+        self.assert_valid()
+
+    def test_roles_file_decides_what_a_satellite_may_write(self):
+        path = self.copy / "roles.json"
+        roles = json.loads(path.read_text(encoding="utf-8"))
+        roles["punk-03-edison"]["writes"].remove("note")
+        path.write_text(json.dumps(roles), encoding="utf-8")
+        self.init("light")
+        errors = self.append_error(json.dumps([draft("punk-03-edison", "note"),
+                                               draft("punk-03-edison", "proposal")]))
+        self.assertEqual(errors, ["draft[0]: punk-03-edison may not write 'note'"])
+
+    def test_missing_roles_file(self):
+        (self.copy / "roles.json").unlink()
+        self.assert_init_cannot_load()
+
+    def test_corrupt_schema_file(self):
+        (self.copy / "event.schema.json").write_bytes(b"{ not json")
+        self.assert_init_cannot_load()
+
+
+class DraftSourceTests(Base):
+    def setUp(self):
+        super().setUp()
+        self.init("light")
+
+    def append_file_error(self, path):
+        before = self.snapshot()
+        code, out = self.run_cli("append", "--draft-file", str(path))
+        self.assertEqual(code, 1, out)
+        self.assertEqual(self.snapshot(), before)
+        return out["errors"]
+
+    def test_unreadable_draft_file(self):
+        folder = Path(self._tmp.name)
+        not_utf8 = folder / "not-utf8.json"
+        not_utf8.write_bytes(b"\xff[]")
+        for path in (folder / "absent.json", not_utf8):
+            with self.subTest(path=path.name):
+                errors = self.append_file_error(path)
+                self.assertEqual(len(errors), 1, errors)
+                self.assertTrue(errors[0].startswith(f"cannot read drafts from {path}: "), errors)
+
+    def test_phase_without_a_satellite_takes_no_drafts(self):
+        doc = self.doc()
+        doc["state"]["phase"] = "DEFINED"  # edited by hand: an active mission never rests here
+        (self.dir / "punk-records.json").write_text(json.dumps(doc), encoding="utf-8")
+        errors = self.append_error(json.dumps([draft("punk-03-edison", "proposal")]))
+        self.assertEqual(errors, ["phase DEFINED takes no satellite drafts"])
+
+
+class ContextFileFailureTests(Base):
+    """write_context_file, in process, on a mission that already has its first context file."""
+
+    def setUp(self):
+        super().setUp()
+        self.init("light")
+        self.mission = punk_records.load_mission(self.dir)[0]
+        self.folder = self.dir / "contexts"
+        self.first = self.folder / "01-punk-03-edison.json"
+        self.first_bytes = self.first.read_bytes()
+
+    def write(self):
+        return punk_records.write_context_file(self.mission, "punk-03-edison", {"x": 1})
+
+    def test_name_collision_takes_the_next_number(self):
+        with mock.patch.object(Path, "glob", return_value=[]):  # the existing file goes unseen
+            path, digest = self.write()
+        self.assertEqual(path, (self.folder / "02-punk-03-edison.json").resolve())
+        self.assertEqual(digest, hashlib.sha256(path.read_bytes()).hexdigest())
+        self.assertEqual(json.loads(path.read_bytes()), {"x": 1})
+        self.assertEqual(self.first.read_bytes(), self.first_bytes)
+
+    def test_open_failure_is_an_engine_error(self):
+        before = self.snapshot()
+        with mock.patch.object(punk_records, "open", create=True, side_effect=PermissionError("denied")):
+            with self.assertRaises(punk_records.EngineError) as caught:
+                self.write()
+        path = self.folder / "02-punk-03-edison.json"
+        self.assertEqual(caught.exception.errors, [f"cannot write context file {path}: denied"])
+        self.assertEqual(self.snapshot(), before)
+
+
+class RuntimeLimitFallbackTests(Base):
+    def test_invalid_engine_values_fall_back_to_the_defaults(self):
+        self.init("light")
+        path = self.dir / "engine.json"
+        original = json.loads(path.read_text(encoding="utf-8"))
+        cases = (("draft_words", 0), ("draft_words", "x"), ("draft_words", True),
+                 ("search_limit", -1), ("search_limit", "x"))
+        for key, value in cases:
+            with self.subTest(key=key, value=value):
+                path.write_text(json.dumps({**original, key: value}), encoding="utf-8")
+                code, out = self.run_cli("context")
+                self.assertEqual(code, 0, out)
+                limits = out["runtime_limits"]
+                self.assertEqual((limits["web_searches"], limits["draft_words"]), (3, 250))
+                self.assertEqual(limits["rules"][:2], [
+                    "Keep the content of each draft under about 250 words.",
+                    "punk-04-pythagoras only: use at most 3 web searches.",
+                ])
+
+
+class EditedMissionTests(Base):
+    """Missions whose files were edited by hand."""
+
+    def add_events(self, etype, payload, count=1):
+        events = self.events()
+        for _ in range(count):
+            events.append({**events[-1], "seq": len(events) + 1, "type": etype, "actor": "system",
+                           "payload": payload})
+        self.write_events(events)
+
+    def write_events(self, events):
+        (self.dir / "events.jsonl").write_bytes("".join(json.dumps(e) + "\n" for e in events).encode("utf-8"))
+
+    def assert_note_rejected(self, expected):
+        before = self.snapshot()
+        code, out = self.run_cli("note", "--text", "A note.")
+        self.assertEqual(code, 1, out)
+        self.assertEqual(out["errors"], [expected])
+        self.assertEqual(self.snapshot(), before)
+
+    def test_gap_in_event_seq_blocks_the_commit(self):
+        self.init("light")
+        events = self.events()
+        events[-1]["seq"] += 5
+        self.write_events(events)
+        self.assert_note_rejected("events seq is not consecutive from 1")
+
+    def test_two_terminal_events_block_the_commit(self):
+        self.init("light")
+        self.add_events("mission_aborted", {"reason": "Edited."}, count=2)
+        self.assert_note_rejected("more than one terminal event")
+
+    def test_status_of_a_missing_folder(self):
+        code, out = self.run_cli("status")
+        self.assertEqual(code, 1, out)
+        self.assertEqual(len(out["errors"]), 1, out)
+        self.assertTrue(out["errors"][0].startswith(f"cannot load mission from {self.dir}: "), out)
+        self.assertEqual(list(Path(self._tmp.name).iterdir()), [])
+
+    def test_unknown_pause_kind_only_offers_abort(self):
+        self.init("light")
+        self.add_events("hitl_requested", {"kind": "mystery", "reason": "Edited."})
+        before = self.snapshot()
+        code, out = self.run_cli("status")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["next"], {"phase": "IDEATION", "actor": "stella", "action": "await_hitl",
+                                       "kind": "mystery", "decisions": ["abort"]})
+        self.assertEqual(self.snapshot(), before)
+
+
 if __name__ == "__main__":
     unittest.main()
