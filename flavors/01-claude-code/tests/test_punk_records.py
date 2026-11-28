@@ -2638,7 +2638,7 @@ class AtomicWriteTests(Base):
             real_replace(src, dst)
 
         with contextlib.ExitStack() as stack:
-            stack.enter_context(mock.patch.object(punk_records.os, "replace", replace))
+            stack.enter_context(mock.patch.object(os, "replace", replace))
             for patch in patches:
                 stack.enter_context(patch)
             with self.assertRaises(OSError) as caught:
@@ -2685,7 +2685,7 @@ class CommitFailureTests(Base):
         before = self.snapshot()
         # A StringIO has no reconfigure(), which main() has to tolerate.
         stdout, stderr = io.StringIO(), io.StringIO()
-        with mock.patch.object(punk_records.os, "replace", side_effect=OSError("boom")):
+        with mock.patch.object(os, "replace", side_effect=OSError("boom")):
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 code = punk_records.main(["note", "--text", "A note.", "--mission-dir", str(self.dir)])
         self.assertEqual(code, 1)
@@ -2752,9 +2752,7 @@ class IsolatedCopyTests(Base):
     def setUp(self):
         super().setUp()
         self.copy = Path(self._tmp.name).resolve() / ".claude" / "vegapunk"
-        self.copy.mkdir(parents=True)
-        for name in ("punk_records.py", "roles.json", "punk-records.schema.json", "event.schema.json"):
-            shutil.copy(VEGAPUNK_DIR / name, self.copy / name)
+        shutil.copytree(VEGAPUNK_DIR, self.copy, ignore=shutil.ignore_patterns("__pycache__"))
         patch = mock.patch.dict(globals(), SCRIPT=self.copy / "punk_records.py")  # run_cli runs the copy
         patch.start()
         self.addCleanup(patch.stop)
@@ -2849,7 +2847,16 @@ class ContextFileFailureTests(Base):
 
     def test_open_failure_is_an_engine_error(self):
         before = self.snapshot()
-        with mock.patch.object(punk_records, "open", create=True, side_effect=PermissionError("denied")):
+        real_open = open
+        contexts = self.folder.resolve()
+
+        def deny_context_writes(file, mode="r", *args, **kwargs):
+            # builtins.open is patched, so the failure reaches the writer in whichever module it lives.
+            if set(mode) & {"w", "x"} and isinstance(file, (str, os.PathLike)) and contexts in Path(file).resolve().parents:
+                raise PermissionError("denied")
+            return real_open(file, mode, *args, **kwargs)
+
+        with mock.patch("builtins.open", side_effect=deny_context_writes):
             with self.assertRaises(punk_records.EngineError) as caught:
                 self.write()
         path = self.folder / "02-punk-03-edison.json"
