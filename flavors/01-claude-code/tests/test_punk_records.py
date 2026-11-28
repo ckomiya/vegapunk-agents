@@ -3,17 +3,28 @@
 """Tests for .claude/vegapunk/punk_records.py (run: python -m unittest discover -s <this dir>)."""
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from jsonschema import Draft202012Validator, FormatChecker
 
 VEGAPUNK_DIR = Path(__file__).resolve().parent.parent / ".claude" / "vegapunk"
+sys.path.insert(0, str(VEGAPUNK_DIR))
+try:
+    import punk_records
+finally:
+    sys.path.remove(str(VEGAPUNK_DIR))
+
 SCRIPT = VEGAPUNK_DIR / "punk_records.py"
 TERMINAL_EVENTS = {"mission_completed", "mission_incomplete", "mission_failed", "mission_aborted"}
 
@@ -2602,6 +2613,107 @@ class EngineErrorTests(Base):
         code, out = self.run_cli("approve")
         self.assertNotEqual(code, 0, out)
         self.assertEqual(out["errors"], ["approve is only valid in HITL_APPROVAL (current phase: IDEATION)"])
+
+
+class AtomicWriteTests(Base):
+    """atomic_write_all when the third of three replacements fails."""
+
+    def setUp(self):
+        super().setUp()
+        self.folder = Path(self._tmp.name)
+        self.first, self.new, self.third = (self.folder / n for n in ("first", "new", "third"))
+        self.first.write_bytes(b"first before")
+        self.third.write_bytes(b"third before")
+
+    def write_failing_on_third_replace(self, *patches):
+        """Run the write under the extra patches; assert that the replace error itself propagates."""
+        boom = OSError("boom")
+        real_replace = os.replace
+        calls = []
+
+        def replace(src, dst):
+            calls.append(dst)
+            if len(calls) == 3:
+                raise boom
+            real_replace(src, dst)
+
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(punk_records.os, "replace", replace))
+            for patch in patches:
+                stack.enter_context(patch)
+            with self.assertRaises(OSError) as caught:
+                punk_records.atomic_write_all(
+                    {self.first: b"first after", self.new: b"new after", self.third: b"third after"}
+                )
+        self.assertIs(caught.exception, boom)
+        self.assertEqual(calls, [self.first, self.new, self.third])
+
+    def files(self):
+        return {p.name: p.read_bytes() for p in self.folder.iterdir()}
+
+    def test_failed_replace_rolls_back_every_file(self):
+        self.write_failing_on_third_replace()
+        self.assertEqual(self.files(), {"first": b"first before", "third": b"third before"})
+
+    def test_failed_restore_keeps_the_original_error_and_continues_the_rollback(self):
+        self.write_failing_on_third_replace(
+            mock.patch.object(Path, "write_bytes", side_effect=OSError("secondary"))
+        )
+        # The file that could not be restored keeps the new bytes; the new file is still removed.
+        self.assertEqual(self.files(), {"first": b"first after", "third": b"third before"})
+
+    def test_failed_temp_removal_keeps_the_original_error(self):
+        real_unlink = Path.unlink
+
+        def unlink(path, *args, **kwargs):
+            if path.suffix == ".tmp":
+                raise PermissionError("secondary")
+            real_unlink(path, *args, **kwargs)
+
+        self.write_failing_on_third_replace(mock.patch.object(Path, "unlink", unlink))
+        files = self.files()
+        leftovers = [name for name in files if name.endswith(".tmp")]
+        self.assertEqual(len(leftovers), 1)  # the temp file that was never moved into place
+        self.assertTrue(leftovers[0].startswith("third."))
+        self.assertEqual(files.pop(leftovers[0]), b"third after")
+        self.assertEqual(files, {"first": b"first before", "third": b"third before"})
+
+
+class CommitFailureTests(Base):
+    def test_failed_write_is_reported_and_changes_nothing(self):
+        self.init("light")
+        before = self.snapshot()
+        # A StringIO has no reconfigure(), which main() has to tolerate.
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with mock.patch.object(punk_records.os, "replace", side_effect=OSError("boom")):
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = punk_records.main(["note", "--text", "A note.", "--mission-dir", str(self.dir)])
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            json.loads(stdout.getvalue()),
+            {"ok": False, "errors": ["write failed, nothing was changed: boom"]},
+        )
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertEqual(self.snapshot(), before)
+
+    def test_context_write_failure_after_commit_is_an_unexpected_error(self):
+        """Characterization, not endorsement: the mission advances before the next context is written. Known issue to fix separately, not during the refactoring."""
+        self.init("light")
+        contexts = self.dir / "contexts"
+        shutil.rmtree(contexts)
+        contexts.write_bytes(b"not a folder")
+        code, out = self.run_cli(
+            "append", "--draft-file", "-", stdin=json.dumps([draft("punk-03-edison", "proposal")])
+        )
+        self.assertEqual(code, 1, out)
+        self.assertFalse(out["ok"])
+        self.assertEqual(len(out["errors"]), 1)
+        # The rest of the message comes from the operating system, in its language.
+        self.assertTrue(out["errors"][0].startswith("unexpected error: FileExistsError:"), out)
+        doc, _ = self.assert_valid()
+        self.assertEqual(doc["state"]["phase"], "VERDICT")
+        self.assertEqual([(r["id"], r["type"]) for r in doc["records"]], [("r-001", "goal"), ("r-002", "proposal")])
+        self.assertEqual(contexts.read_bytes(), b"not a folder")
 
 
 if __name__ == "__main__":
